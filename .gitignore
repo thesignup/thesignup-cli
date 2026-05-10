@@ -141,3 +141,10 @@ dist
 vite.config.js.timestamp-*
 vite.config.ts.timestamp-*
 .vite/
+
+# thesignup-cli additions
+.claude/
+.cursor/
+.*.bun-build
+*.bun-build
+.DS_Store
