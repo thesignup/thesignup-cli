@@ -1,4 +1,10 @@
 import { randomUUID } from 'node:crypto';
+import type {
+  Signup,
+  Participant,
+  SignupStatus,
+  SignupAnalytics,
+} from '../src/api/types.ts';
 
 export type DeviceState =
   | { kind: 'pending'; pollsRemaining?: number; slowDownPolls?: number }
@@ -9,6 +15,15 @@ export type DeviceState =
 export interface MockOAuthServerOptions {
   deviceAuthorizationOverride?: () => { status: number; body: unknown };
   tokenOverride?: () => { status: number; body: unknown };
+  requireAuth?: boolean;
+}
+
+export interface RecordedRequest {
+  method: string;
+  path: string;
+  query: Record<string, string>;
+  body: unknown;
+  authorization?: string;
 }
 
 export interface MockOAuthServer {
@@ -23,6 +38,14 @@ export interface MockOAuthServer {
   tokenPolls(deviceCode: string): number;
   lastDeviceAuthorizationBody(): URLSearchParams;
   lastTokenBody(): URLSearchParams;
+  seedSignup(signup: Signup): void;
+  seedParticipant(participant: Participant): void;
+  getSignup(idOrSlug: string): Signup | undefined;
+  listSignups(): Signup[];
+  listParticipants(signupId: string): Participant[];
+  setAnalytics(signupId: string, analytics: SignupAnalytics): void;
+  setAiDraft(draft: Partial<Signup>): void;
+  recordedRequests(): RecordedRequest[];
 }
 
 export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOAuthServer {
@@ -30,6 +53,27 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
   const pollCounts = new Map<string, number>();
   let lastDeviceAuthorizationBody = new URLSearchParams();
   let lastTokenBody = new URLSearchParams();
+
+  const signupsById = new Map<string, Signup>();
+  const slugIndex = new Map<string, string>();
+  const participants = new Map<string, Participant>();
+  const analytics = new Map<string, SignupAnalytics>();
+  const recorded: RecordedRequest[] = [];
+  let aiDraft: Partial<Signup> | null = null;
+
+  const requireAuth = opts.requireAuth ?? true;
+
+  const findSignup = (idOrSlug: string): Signup | undefined => {
+    const direct = signupsById.get(idOrSlug);
+    if (direct) return direct;
+    const id = slugIndex.get(idOrSlug);
+    return id ? signupsById.get(id) : undefined;
+  };
+
+  const indexSignup = (signup: Signup): void => {
+    signupsById.set(signup.id, signup);
+    slugIndex.set(signup.slug, signup.id);
+  };
 
   let server: ReturnType<typeof Bun.serve> | null = null;
 
@@ -120,6 +164,190 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
       return jsonResponse(200, { id: 'usr_test', name: 'Test User', email: 'test@example.com' });
     }
 
+    if (path.startsWith('/v1/')) {
+      const authHeader = req.headers.get('authorization') ?? undefined;
+      const query: Record<string, string> = {};
+      for (const [k, v] of url.searchParams) query[k] = v;
+      let parsedBody: unknown = undefined;
+      if (req.method !== 'GET' && req.method !== 'DELETE') {
+        const text = await req.text();
+        if (text) {
+          try {
+            parsedBody = JSON.parse(text);
+          } catch {
+            parsedBody = text;
+          }
+        }
+      }
+      recorded.push({
+        method: req.method,
+        path,
+        query,
+        body: parsedBody,
+        ...(authHeader ? { authorization: authHeader } : {}),
+      });
+
+      if (requireAuth && !authHeader?.startsWith('Bearer ')) {
+        return jsonResponse(401, { error: 'unauthorized' });
+      }
+
+      const signupMatch = path.match(
+        /^\/v1\/signups\/([^/]+)(?:\/(participants|cancel|publish|duplicate|register|analytics)(?:\/([^/]+))?)?$/,
+      );
+
+      if (req.method === 'GET' && path === '/v1/signups') {
+        const status = query.status as SignupStatus | undefined;
+        const limit = query.limit ? Number(query.limit) : undefined;
+        let list = [...signupsById.values()];
+        if (status) list = list.filter((s) => s.status === status);
+        list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+        if (limit !== undefined) list = list.slice(0, limit);
+        return jsonResponse(200, { signups: list });
+      }
+
+      if (req.method === 'POST' && path === '/v1/signups') {
+        const body = (parsedBody ?? {}) as Partial<Signup> & { description?: string };
+        const now = new Date().toISOString();
+        const id = body.id ?? `su_${randomUUID().slice(0, 8)}`;
+        const slug = body.slug ?? `signup-${id.slice(-6)}`;
+        const created: Signup = {
+          id,
+          slug,
+          status: body.status ?? 'draft',
+          title: body.title ?? body.description ?? 'Untitled',
+          created_at: now,
+          updated_at: now,
+          ...(body.description !== undefined ? { description: body.description } : {}),
+          ...(body.starts_at !== undefined ? { starts_at: body.starts_at } : {}),
+          ...(body.ends_at !== undefined ? { ends_at: body.ends_at } : {}),
+          ...(body.location !== undefined ? { location: body.location } : {}),
+          ...(body.slots !== undefined ? { slots: body.slots } : {}),
+          ...(body.url !== undefined ? { url: body.url } : {}),
+        };
+        indexSignup(created);
+        return jsonResponse(201, created);
+      }
+
+      if (signupMatch) {
+        const [, idOrSlug, sub, subId] = signupMatch;
+        if (!idOrSlug) return jsonResponse(404, { error: 'not_found' });
+        const target = findSignup(idOrSlug);
+        if (!target) return jsonResponse(404, { error: 'not_found' });
+
+        if (!sub) {
+          if (req.method === 'GET') return jsonResponse(200, target);
+          if (req.method === 'PATCH') {
+            const patch = (parsedBody ?? {}) as Partial<Signup>;
+            const updated: Signup = {
+              ...target,
+              ...patch,
+              id: target.id,
+              slug: patch.slug ?? target.slug,
+              updated_at: new Date().toISOString(),
+            };
+            indexSignup(updated);
+            return jsonResponse(200, updated);
+          }
+          if (req.method === 'DELETE') {
+            signupsById.delete(target.id);
+            slugIndex.delete(target.slug);
+            return new Response(null, { status: 204 });
+          }
+        }
+
+        if (sub === 'cancel' && req.method === 'POST') {
+          const updated = { ...target, status: 'canceled' as const, updated_at: new Date().toISOString() };
+          indexSignup(updated);
+          return jsonResponse(200, updated);
+        }
+        if (sub === 'publish' && req.method === 'POST') {
+          const updated = { ...target, status: 'active' as const, updated_at: new Date().toISOString() };
+          indexSignup(updated);
+          return jsonResponse(200, updated);
+        }
+        if (sub === 'duplicate' && req.method === 'POST') {
+          const now = new Date().toISOString();
+          const id = `su_${randomUUID().slice(0, 8)}`;
+          const duped: Signup = {
+            ...target,
+            id,
+            slug: `${target.slug}-copy`,
+            status: 'draft',
+            created_at: now,
+            updated_at: now,
+          };
+          indexSignup(duped);
+          return jsonResponse(201, duped);
+        }
+
+        if (sub === 'participants') {
+          if (req.method === 'GET') {
+            const list = [...participants.values()].filter((p) => p.signup_id === target.id);
+            return jsonResponse(200, { participants: list });
+          }
+          if (req.method === 'POST') {
+            const body = (parsedBody ?? {}) as Partial<Participant>;
+            const now = new Date().toISOString();
+            const p: Participant = {
+              id: body.id ?? `pa_${randomUUID().slice(0, 8)}`,
+              signup_id: target.id,
+              name: body.name ?? 'Anonymous',
+              created_at: now,
+              ...(body.email !== undefined ? { email: body.email } : {}),
+              ...(body.slot !== undefined ? { slot: body.slot } : {}),
+              ...(body.items !== undefined ? { items: body.items } : {}),
+            };
+            participants.set(p.id, p);
+            return jsonResponse(201, p);
+          }
+          if (req.method === 'DELETE' && subId) {
+            const existing = participants.get(subId);
+            if (!existing || existing.signup_id !== target.id) {
+              return jsonResponse(404, { error: 'not_found' });
+            }
+            participants.delete(subId);
+            return new Response(null, { status: 204 });
+          }
+        }
+
+        if (sub === 'register' && req.method === 'POST') {
+          const body = (parsedBody ?? {}) as Partial<Participant>;
+          const now = new Date().toISOString();
+          const p: Participant = {
+            id: `pa_${randomUUID().slice(0, 8)}`,
+            signup_id: target.id,
+            name: body.name ?? 'Anonymous',
+            created_at: now,
+            ...(body.email !== undefined ? { email: body.email } : {}),
+            ...(body.slot !== undefined ? { slot: body.slot } : {}),
+            ...(body.items !== undefined ? { items: body.items } : {}),
+          };
+          participants.set(p.id, p);
+          return jsonResponse(201, p);
+        }
+
+        if (sub === 'analytics' && req.method === 'GET') {
+          const a = analytics.get(target.id) ?? {
+            signup_id: target.id,
+            total_participants: [...participants.values()].filter(
+              (p) => p.signup_id === target.id,
+            ).length,
+          };
+          return jsonResponse(200, a);
+        }
+      }
+
+      if (path === '/v1/ai/draft' && req.method === 'POST') {
+        const body = (parsedBody ?? {}) as { description?: string };
+        const signup = aiDraft ?? {
+          title: body.description ?? 'AI-drafted signup',
+          status: 'draft' as const,
+          description: body.description ?? '',
+        };
+        return jsonResponse(200, { signup });
+      }
+    }
+
     return new Response('not found', { status: 404 });
   };
 
@@ -163,6 +391,30 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
     },
     lastTokenBody() {
       return lastTokenBody;
+    },
+    seedSignup(signup) {
+      indexSignup(signup);
+    },
+    seedParticipant(participant) {
+      participants.set(participant.id, participant);
+    },
+    getSignup(idOrSlug) {
+      return findSignup(idOrSlug);
+    },
+    listSignups() {
+      return [...signupsById.values()];
+    },
+    listParticipants(signupId) {
+      return [...participants.values()].filter((p) => p.signup_id === signupId);
+    },
+    setAnalytics(signupId, a) {
+      analytics.set(signupId, a);
+    },
+    setAiDraft(draft) {
+      aiDraft = draft;
+    },
+    recordedRequests() {
+      return [...recorded];
     },
   };
 }
