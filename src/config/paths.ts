@@ -21,3 +21,7 @@ export function credentialsFile(): string {
 export function profilesFile(): string {
   return join(configDir(), 'profiles.json');
 }
+
+export function updateCacheFile(): string {
+  return join(configDir(), 'update-cache.json');
+}
