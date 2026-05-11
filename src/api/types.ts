@@ -53,3 +53,29 @@ export interface ListParticipantsResponse {
 export interface AiDraftResponse {
   signup: Partial<Signup>;
 }
+
+export type WebhookStatus = 'active' | 'paused' | 'failing';
+
+export interface Webhook {
+  id: string;
+  url: string;
+  events: string[];
+  status: WebhookStatus;
+  secret?: string;
+  created_at: string;
+  updated_at?: string;
+  description?: string;
+}
+
+export interface ListWebhooksResponse {
+  webhooks: Webhook[];
+}
+
+export interface WebhookEvent {
+  id: string;
+  type: string;
+  payload: unknown;
+  signature: string;
+  signature_header_name?: string;
+  delivered_at: string;
+}

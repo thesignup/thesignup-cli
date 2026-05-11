@@ -4,6 +4,8 @@ import type {
   Participant,
   SignupStatus,
   SignupAnalytics,
+  Webhook,
+  WebhookEvent,
 } from '../src/api/types.ts';
 
 export type DeviceState =
@@ -46,6 +48,11 @@ export interface MockOAuthServer {
   setAnalytics(signupId: string, analytics: SignupAnalytics): void;
   setAiDraft(draft: Partial<Signup>): void;
   recordedRequests(): RecordedRequest[];
+  seedWebhook(webhook: Webhook): void;
+  listWebhooks(): Webhook[];
+  getWebhook(id: string): Webhook | undefined;
+  publishWebhookEvent(event: WebhookEvent): void;
+  closeEventStreams(): void;
 }
 
 export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOAuthServer {
@@ -60,6 +67,8 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
   const analytics = new Map<string, SignupAnalytics>();
   const recorded: RecordedRequest[] = [];
   let aiDraft: Partial<Signup> | null = null;
+  const webhooks = new Map<string, Webhook>();
+  const eventStreamControllers = new Set<ReadableStreamDefaultController<Uint8Array>>();
 
   const requireAuth = opts.requireAuth ?? true;
 
@@ -346,9 +355,87 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
         };
         return jsonResponse(200, { signup });
       }
+
+      if (path === '/v1/webhooks' && req.method === 'GET') {
+        return jsonResponse(200, { webhooks: [...webhooks.values()] });
+      }
+      if (path === '/v1/webhooks' && req.method === 'POST') {
+        const body = (parsedBody ?? {}) as Partial<Webhook>;
+        const now = new Date().toISOString();
+        const created: Webhook = {
+          id: body.id ?? `whk_${randomUUID().slice(0, 8)}`,
+          url: body.url ?? '',
+          events: body.events ?? [],
+          status: body.status ?? 'active',
+          created_at: now,
+          ...(body.secret !== undefined ? { secret: body.secret } : {}),
+          ...(body.description !== undefined ? { description: body.description } : {}),
+        };
+        webhooks.set(created.id, created);
+        return jsonResponse(201, created);
+      }
+      if (path === '/v1/webhooks/events' && req.method === 'GET') {
+        const stream = new ReadableStream<Uint8Array>({
+          start(controller) {
+            eventStreamControllers.add(controller);
+          },
+          cancel() {
+            // controller is auto-cleaned by the stream lifecycle
+          },
+        });
+        return new Response(stream, {
+          status: 200,
+          headers: {
+            'content-type': 'text/event-stream',
+            'cache-control': 'no-cache',
+            connection: 'keep-alive',
+          },
+        });
+      }
+      const webhookIdMatch = path.match(/^\/v1\/webhooks\/([^/]+)$/);
+      if (webhookIdMatch) {
+        const [, id] = webhookIdMatch;
+        if (!id) return jsonResponse(404, { error: 'not_found' });
+        const wh = webhooks.get(id);
+        if (!wh) return jsonResponse(404, { error: 'not_found' });
+        if (req.method === 'GET') return jsonResponse(200, wh);
+        if (req.method === 'DELETE') {
+          webhooks.delete(id);
+          return new Response(null, { status: 204 });
+        }
+      }
     }
 
     return new Response('not found', { status: 404 });
+  };
+
+  const encoder = new TextEncoder();
+  const broadcastEvent = (event: WebhookEvent): void => {
+    const lines = [
+      `id: ${event.id}`,
+      `event: ${event.type}`,
+      `data: ${JSON.stringify(event)}`,
+      '',
+      '',
+    ].join('\n');
+    const chunk = encoder.encode(lines);
+    for (const controller of eventStreamControllers) {
+      try {
+        controller.enqueue(chunk);
+      } catch {
+        eventStreamControllers.delete(controller);
+      }
+    }
+  };
+  const closeStreams = (): void => {
+    for (const controller of eventStreamControllers) {
+      try {
+        controller.close();
+      } catch {
+        // ignore
+      }
+    }
+    eventStreamControllers.clear();
   };
 
   return {
@@ -415,6 +502,21 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
     },
     recordedRequests() {
       return [...recorded];
+    },
+    seedWebhook(wh) {
+      webhooks.set(wh.id, wh);
+    },
+    listWebhooks() {
+      return [...webhooks.values()];
+    },
+    getWebhook(id) {
+      return webhooks.get(id);
+    },
+    publishWebhookEvent(event) {
+      broadcastEvent(event);
+    },
+    closeEventStreams() {
+      closeStreams();
     },
   };
 }

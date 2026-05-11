@@ -20,6 +20,8 @@ import {
 import { runRegister } from './commands/register.ts';
 import { runAiDraft } from './commands/ai.ts';
 import { runAnalytics } from './commands/analytics.ts';
+import { runWebhooksList, runWebhooksCreate } from './commands/webhooks/index.ts';
+import { runWebhooksListen } from './commands/webhooks/listen.ts';
 import type { SignupStatus } from './api/types.ts';
 
 const VERSION = '0.0.1';
@@ -240,6 +242,60 @@ export function buildProgram(): Command {
     .description('print analytics for a signup')
     .action(async (signup: string) => {
       const code = await runAnalytics({ ...pickGlobals(program), signup });
+      process.exit(code);
+    });
+
+  const webhooks = program.command('webhooks').description('manage webhook endpoints');
+
+  webhooks
+    .command('list')
+    .description('list configured webhook endpoints')
+    .action(async () => {
+      const code = await runWebhooksList(pickGlobals(program));
+      process.exit(code);
+    });
+
+  webhooks
+    .command('create')
+    .description('register a new webhook endpoint')
+    .requiredOption('--url <url>', 'destination URL the events should be POSTed to')
+    .requiredOption(
+      '--events <patterns>',
+      'comma-separated event patterns (e.g. signup.*,participant.created)',
+    )
+    .option('--description <text>', 'optional description')
+    .action(async (cmdOpts: { url: string; events: string; description?: string }) => {
+      const g = pickGlobals(program);
+      const code = await runWebhooksCreate({
+        ...g,
+        url: cmdOpts.url,
+        events: cmdOpts.events,
+        ...(cmdOpts.description ? { description: cmdOpts.description } : {}),
+      });
+      process.exit(code);
+    });
+
+  webhooks
+    .command('listen')
+    .description('open a long-lived stream and forward webhook events to a local URL')
+    .requiredOption(
+      '--forward-to <url>',
+      'local destination (e.g. localhost:3000/webhooks or http://localhost:3000/webhooks)',
+    )
+    .option('--events <patterns>', 'comma-separated event patterns to filter on')
+    .option('--max-retries <n>', 'maximum reconnect attempts before giving up', (v) => Number(v))
+    .action(async (cmdOpts: { forwardTo: string; events?: string; maxRetries?: number }) => {
+      const g = pickGlobals(program);
+      const controller = new AbortController();
+      process.on('SIGINT', () => controller.abort());
+      process.on('SIGTERM', () => controller.abort());
+      const code = await runWebhooksListen({
+        ...g,
+        forwardTo: cmdOpts.forwardTo,
+        ...(cmdOpts.events ? { events: cmdOpts.events } : {}),
+        ...(cmdOpts.maxRetries !== undefined ? { maxRetries: cmdOpts.maxRetries } : {}),
+        signal: controller.signal,
+      });
       process.exit(code);
     });
 

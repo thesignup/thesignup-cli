@@ -1,4 +1,4 @@
-import type { Signup, Participant, SignupAnalytics } from '../../api/types.ts';
+import type { Signup, Participant, SignupAnalytics, Webhook } from '../../api/types.ts';
 
 export function formatSignupRow(s: Signup): string {
   const parts = [s.id.padEnd(14), s.status.padEnd(9), truncate(s.title, 38).padEnd(38), s.slug];
@@ -60,4 +60,28 @@ export function formatAnalytics(a: SignupAnalytics): string[] {
 function truncate(s: string, max: number): string {
   if (s.length <= max) return s;
   return s.slice(0, max - 1) + '…';
+}
+
+export function webhookHeader(): string {
+  return ['ID'.padEnd(14), 'STATUS'.padEnd(9), 'EVENTS'.padEnd(38), 'URL'].join('  ');
+}
+
+export function formatWebhookRow(w: Webhook): string {
+  return [
+    w.id.padEnd(14),
+    w.status.padEnd(9),
+    truncate(w.events.join(','), 38).padEnd(38),
+    w.url,
+  ].join('  ');
+}
+
+export function formatWebhookDetail(w: Webhook): string[] {
+  const lines = [
+    `${w.id}  [${w.status}]`,
+    `  url:    ${w.url}`,
+    `  events: ${w.events.join(', ') || '(none)'}`,
+  ];
+  if (w.description) lines.push(`  desc:   ${w.description}`);
+  if (w.secret) lines.push(`  secret: ${w.secret}  ⚠ store this — it won't be shown again`);
+  return lines;
 }
