@@ -3,11 +3,35 @@ import { mkdtempSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { randomBytes } from 'node:crypto';
-import { runLogin, DEFAULT_CLIENT_ID } from './login.ts';
+import { runLogin, DEFAULT_CLIENT_ID, DEFAULT_SCOPES } from './login.ts';
 import { runStatus } from './status.ts';
 import { runLogout } from './logout.ts';
 import { createCredentialStore } from '../../storage/credentials.ts';
 import { createMockOAuthServer } from '../../../test/mock-oauth-server.ts';
+
+describe('DEFAULT_SCOPES', () => {
+  test('includes offline_access so the API issues a refresh token', () => {
+    // Backend gates refresh-token issuance on the offline_access scope
+    // (src/server/services/oauth-token.service.ts in the API repo). Without
+    // it, the CLI's proactive refresh + 401-retry path is dead code and
+    // users would have to `auth login` again every hour.
+    expect(DEFAULT_SCOPES.split(' ')).toContain('offline_access');
+  });
+
+  test('preserves all six resource scopes', () => {
+    const scopes = DEFAULT_SCOPES.split(' ');
+    for (const s of [
+      'signups:read',
+      'signups:write',
+      'participants:read',
+      'participants:write',
+      'webhooks:read',
+      'webhooks:write',
+    ]) {
+      expect(scopes).toContain(s);
+    }
+  });
+});
 
 describe('runLogin (integration with mock server)', () => {
   test('happy path: stores credentials and identity for the profile', async () => {
