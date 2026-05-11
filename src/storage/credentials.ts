@@ -42,7 +42,7 @@ export interface KeyringConstructor {
 }
 
 export interface CredentialStoreOptions {
-  keyringFactory?: () => KeyringConstructor | null;
+  keyringFactory?: () => KeyringConstructor | null | Promise<KeyringConstructor | null>;
   filePath?: string;
   fileIndexPath?: string;
   fileEncryptionKey?: Buffer;
@@ -52,11 +52,16 @@ export function createCredentialStore(options: CredentialStoreOptions = {}): Cre
   const keyringFactory = options.keyringFactory ?? defaultKeyringFactory;
   const filePath = options.filePath ?? credentialsFile();
   const fileIndexPath = options.fileIndexPath ?? `${filePath}.profiles`;
-  const Keyring = keyringFactory();
 
   let detected: StorageBackend | null = null;
+  let Keyring: KeyringConstructor | null = null;
   const detect = async (): Promise<StorageBackend> => {
     if (detected) return detected;
+    try {
+      Keyring = (await keyringFactory()) ?? null;
+    } catch {
+      Keyring = null;
+    }
     if (Keyring) {
       try {
         const probe = new Keyring(SERVICE, '__probe__');
@@ -122,12 +127,10 @@ export function createCredentialStore(options: CredentialStoreOptions = {}): Cre
   };
 }
 
-function defaultKeyringFactory(): KeyringConstructor | null {
+async function defaultKeyringFactory(): Promise<KeyringConstructor | null> {
   try {
-    const mod = (globalThis as unknown as { require?: NodeRequire }).require?.(
-      '@napi-rs/keyring',
-    ) as { Entry?: KeyringConstructor } | undefined;
-    return mod?.Entry ?? null;
+    const mod = (await import('@napi-rs/keyring')) as { Entry?: KeyringConstructor };
+    return mod.Entry ?? null;
   } catch {
     return null;
   }
