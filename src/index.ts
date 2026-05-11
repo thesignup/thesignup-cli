@@ -22,7 +22,9 @@ import { runAiDraft } from './commands/ai.ts';
 import { runAnalytics } from './commands/analytics.ts';
 import { runWebhooksList, runWebhooksCreate } from './commands/webhooks/index.ts';
 import { runWebhooksListen } from './commands/webhooks/listen.ts';
+import { runCompletion } from './commands/completion.ts';
 import type { SignupStatus } from './api/types.ts';
+import { checkForUpdates, buildUpdateNotice } from './util/update-check.ts';
 
 const VERSION = '0.0.1';
 
@@ -57,7 +59,7 @@ export function buildProgram(): Command {
         noBrowser: cmdOpts.browser === false,
         ...(cmdOpts.scope ? { scope: cmdOpts.scope } : {}),
       });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   auth
@@ -65,7 +67,7 @@ export function buildProgram(): Command {
     .description('revoke and clear stored credentials for the active profile')
     .action(async () => {
       const code = await runLogout(pickGlobals(program));
-      process.exit(code);
+      process.exitCode = code;
     });
 
   auth
@@ -73,7 +75,7 @@ export function buildProgram(): Command {
     .description('print the active profile, identity, and scopes')
     .action(async () => {
       const code = await runStatus(pickGlobals(program));
-      process.exit(code);
+      process.exitCode = code;
     });
 
   const signups = program.command('signups').description('manage signups');
@@ -90,7 +92,7 @@ export function buildProgram(): Command {
         ...(cmdOpts.status ? { status: cmdOpts.status } : {}),
         ...(cmdOpts.limit !== undefined ? { limit: cmdOpts.limit } : {}),
       });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   signups
@@ -105,7 +107,7 @@ export function buildProgram(): Command {
         ...(cmdOpts.fromDescription ? { fromDescription: cmdOpts.fromDescription } : {}),
         ...(cmdOpts.file ? { file: cmdOpts.file } : {}),
       });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   signups
@@ -113,7 +115,7 @@ export function buildProgram(): Command {
     .description('print a signup (by id or slug)')
     .action(async (ref: string) => {
       const code = await runSignupsView({ ...pickGlobals(program), ref });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   signups
@@ -127,7 +129,7 @@ export function buildProgram(): Command {
         ref,
         ...(cmdOpts.editor ? { editor: cmdOpts.editor } : {}),
       });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   signups
@@ -135,7 +137,7 @@ export function buildProgram(): Command {
     .description('cancel a signup')
     .action(async (ref: string) => {
       const code = await runSignupsCancel({ ...pickGlobals(program), ref });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   signups
@@ -143,7 +145,7 @@ export function buildProgram(): Command {
     .description('duplicate a signup as a new draft')
     .action(async (ref: string) => {
       const code = await runSignupsDuplicate({ ...pickGlobals(program), ref });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   signups
@@ -151,7 +153,7 @@ export function buildProgram(): Command {
     .description('publish a draft signup')
     .action(async (ref: string) => {
       const code = await runSignupsPublish({ ...pickGlobals(program), ref });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   const participants = program
@@ -163,7 +165,7 @@ export function buildProgram(): Command {
     .description('list participants for a signup')
     .action(async (signup: string) => {
       const code = await runParticipantsList({ ...pickGlobals(program), signup });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   participants
@@ -187,7 +189,7 @@ export function buildProgram(): Command {
           ...(cmdOpts.slot ? { slot: cmdOpts.slot } : {}),
           ...(cmdOpts.items ? { items: cmdOpts.items } : {}),
         });
-        process.exit(code);
+        process.exitCode = code;
       },
     );
 
@@ -200,7 +202,7 @@ export function buildProgram(): Command {
         signup,
         participantId,
       });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   program
@@ -224,7 +226,7 @@ export function buildProgram(): Command {
           ...(cmdOpts.slot ? { slot: cmdOpts.slot } : {}),
           ...(cmdOpts.items ? { items: cmdOpts.items } : {}),
         });
-        process.exit(code);
+        process.exitCode = code;
       },
     );
 
@@ -234,7 +236,7 @@ export function buildProgram(): Command {
     .description('produce a YAML signup draft from a free-form description')
     .action(async (description: string) => {
       const code = await runAiDraft({ ...pickGlobals(program), description });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   program
@@ -242,7 +244,7 @@ export function buildProgram(): Command {
     .description('print analytics for a signup')
     .action(async (signup: string) => {
       const code = await runAnalytics({ ...pickGlobals(program), signup });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   const webhooks = program.command('webhooks').description('manage webhook endpoints');
@@ -252,7 +254,7 @@ export function buildProgram(): Command {
     .description('list configured webhook endpoints')
     .action(async () => {
       const code = await runWebhooksList(pickGlobals(program));
-      process.exit(code);
+      process.exitCode = code;
     });
 
   webhooks
@@ -272,7 +274,21 @@ export function buildProgram(): Command {
         events: cmdOpts.events,
         ...(cmdOpts.description ? { description: cmdOpts.description } : {}),
       });
-      process.exit(code);
+      process.exitCode = code;
+    });
+
+  program
+    .command('completion [shell]')
+    .description('print or install shell completion for bash, zsh, or fish')
+    .option('--install', 'write the completion script to the conventional path for the shell')
+    .action(async (shell: string | undefined, cmdOpts: { install?: boolean }) => {
+      const g = pickGlobals(program);
+      const code = await runCompletion({
+        ...(shell ? { shell } : {}),
+        ...(cmdOpts.install ? { install: true } : {}),
+        ...(g.json ? { json: true } : {}),
+      });
+      process.exitCode = code;
     });
 
   webhooks
@@ -296,7 +312,7 @@ export function buildProgram(): Command {
         ...(cmdOpts.maxRetries !== undefined ? { maxRetries: cmdOpts.maxRetries } : {}),
         signal: controller.signal,
       });
-      process.exit(code);
+      process.exitCode = code;
     });
 
   return program;
@@ -311,7 +327,25 @@ function pickGlobals(program: Command): GlobalFlags {
   return out;
 }
 
+async function maybeEmitUpdateNotice(argv: string[]): Promise<void> {
+  // The `completion` subcommand pipes its output into shell config files, so
+  // we must not contaminate stderr or stdout with anything else during it.
+  if (argv.includes('completion')) return;
+  if (argv.includes('--json')) return;
+  try {
+    const res = await checkForUpdates({ currentVersion: VERSION });
+    if (res.latest) {
+      const notice = buildUpdateNotice(res.current, res.latest);
+      if (notice) process.stderr.write(notice);
+    }
+  } catch {
+    // never let the notice path fail the run
+  }
+}
+
 if (import.meta.main) {
   const program = buildProgram();
   await program.parseAsync(process.argv);
+  await maybeEmitUpdateNotice(process.argv);
+  process.exit(process.exitCode ?? 0);
 }
