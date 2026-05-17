@@ -23,6 +23,14 @@
   "publishConfig": {
     "access": "public"
   },
+  "//binaryChecksums": "SHA-256 of each prebuilt binary, verified by scripts/postinstall.cjs before install. Populate every entry at release time (e.g. `shasum -a 256 dist/*`); an empty value makes the install fail closed.",
+  "binaryChecksums": {
+    "thesignup-darwin-arm64": "",
+    "thesignup-darwin-x64": "",
+    "thesignup-linux-arm64": "",
+    "thesignup-linux-x64": "",
+    "thesignup-windows-x64.exe": ""
+  },
   "scripts": {
     "start": "bun run src/index.ts",
     "lint": "eslint src",

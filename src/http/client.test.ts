@@ -135,4 +135,41 @@ describe('createAuthenticatedClient', () => {
     });
     await expect(client.fetch('/v1/me')).rejects.toThrow(/not authenticated/);
   });
+
+  test('refuses an absolute URL pointing at a different origin', async () => {
+    const store = memoryStore({ default: baseCreds() }); // apiBase https://api.test
+    let fetchCalls = 0;
+    const fetchImpl = (async (_url: string | URL | Request) => {
+      fetchCalls++;
+      return new Response('ok', { status: 200 });
+    }) as typeof fetch;
+    const client = createAuthenticatedClient({
+      store,
+      profile: 'default',
+      clientId: 'cli',
+      fetchImpl,
+    });
+    await expect(client.fetch('https://evil.example/steal')).rejects.toThrow(
+      /refusing to send credentials/,
+    );
+    expect(fetchCalls).toBe(0);
+  });
+
+  test('allows an absolute URL on the same origin as the API base', async () => {
+    const store = memoryStore({ default: baseCreds() });
+    const seen: string[] = [];
+    const fetchImpl = (async (url: string | URL | Request) => {
+      seen.push(typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url);
+      return new Response('ok', { status: 200 });
+    }) as typeof fetch;
+    const client = createAuthenticatedClient({
+      store,
+      profile: 'default',
+      clientId: 'cli',
+      fetchImpl,
+    });
+    const res = await client.fetch('https://api.test/v1/me');
+    expect(res.status).toBe(200);
+    expect(seen[0]).toBe('https://api.test/v1/me');
+  });
 });

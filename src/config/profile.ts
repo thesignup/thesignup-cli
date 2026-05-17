@@ -12,6 +12,11 @@ export interface ResolveProfileInput {
   env?: NodeJS.ProcessEnv;
 }
 
+// Plain HTTP is only acceptable for loopback addresses — there the traffic
+// never leaves the machine, so it can't be intercepted. Any other host must
+// use HTTPS, otherwise the access/refresh tokens would travel in cleartext.
+const LOOPBACK_HOSTS = new Set(['localhost', '127.0.0.1', '[::1]', '::1', '0.0.0.0']);
+
 export function resolveProfile(input: ResolveProfileInput = {}): ProfileContext {
   const env = input.env ?? process.env;
   const name = input.flagProfile ?? env.THESIGNUP_PROFILE ?? DEFAULT_PROFILE;
@@ -21,5 +26,21 @@ export function resolveProfile(input: ResolveProfileInput = {}): ProfileContext 
       `invalid profile name: "${name}" (must be 1–64 chars of letters, digits, "_" or "-")`,
     );
   }
+  assertSafeApiBase(apiBase);
   return { name, apiBase };
+}
+
+function assertSafeApiBase(apiBase: string): void {
+  let url: URL;
+  try {
+    url = new URL(apiBase);
+  } catch {
+    throw new Error(`invalid API base URL: "${apiBase}"`);
+  }
+  if (url.protocol === 'https:') return;
+  if (url.protocol === 'http:' && LOOPBACK_HOSTS.has(url.hostname)) return;
+  throw new Error(
+    `refusing to use API base "${apiBase}": credentials may only be sent over HTTPS ` +
+      `(plain HTTP is allowed only for loopback hosts such as localhost)`,
+  );
 }

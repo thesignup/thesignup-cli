@@ -2,7 +2,13 @@ import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, rmSync, writeFileSync, existsSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CACHE_TTL_MS, buildUpdateNotice, checkForUpdates, compareSemver } from './update-check.ts';
+import {
+  CACHE_TTL_MS,
+  buildUpdateNotice,
+  checkForUpdates,
+  compareSemver,
+  isValidSemver,
+} from './update-check.ts';
 
 let workDir: string;
 let cachePath: string;
@@ -34,6 +40,19 @@ describe('compareSemver', () => {
   });
 });
 
+describe('isValidSemver', () => {
+  test('accepts standard versions and pre-release suffixes', () => {
+    expect(isValidSemver('1.2.3')).toBe(true);
+    expect(isValidSemver('0.1')).toBe(true);
+    expect(isValidSemver('1.2.3-rc.1')).toBe(true);
+  });
+  test('rejects anything that is not a clean version string', () => {
+    expect(isValidSemver('nightly')).toBe(false);
+    expect(isValidSemver('1.2.3; rm -rf /')).toBe(false);
+    expect(isValidSemver('')).toBe(false);
+  });
+});
+
 describe('buildUpdateNotice', () => {
   test('returns null when up to date', () => {
     expect(buildUpdateNotice('1.2.3', '1.2.3')).toBeNull();
@@ -43,6 +62,10 @@ describe('buildUpdateNotice', () => {
     const notice = buildUpdateNotice('0.1.0', '0.2.0');
     expect(notice).toContain('0.1.0');
     expect(notice).toContain('0.2.0');
+  });
+  test('returns null when the latest version is not valid semver', () => {
+    expect(buildUpdateNotice('1.0.0', 'nightly')).toBeNull();
+    expect(buildUpdateNotice('1.0.0', '9.9.9 && curl evil')).toBeNull();
   });
 });
 
@@ -151,5 +174,15 @@ describe('checkForUpdates', () => {
     const res = await checkForUpdates({ currentVersion: '1.0.0', cachePath, fetchImpl });
     expect(res.latest).toBe('1.2.3');
     expect(existsSync(cachePath)).toBe(true);
+  });
+
+  test('a non-semver GitHub tag is ignored rather than trusted', async () => {
+    const fetchImpl = asFetch(
+      async () => new Response(JSON.stringify({ tag_name: 'nightly-build' }), { status: 200 }),
+    );
+    const res = await checkForUpdates({ currentVersion: '1.0.0', cachePath, fetchImpl });
+    expect(res.latest).toBeNull();
+    expect(res.skipped).toBe('refresh-failed');
+    expect(existsSync(cachePath)).toBe(false);
   });
 });
