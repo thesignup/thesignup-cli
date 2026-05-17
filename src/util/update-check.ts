@@ -57,7 +57,13 @@ export async function checkForUpdates(opts: UpdateCheckOptions): Promise<UpdateC
     });
     if (res.ok) {
       const body = (await res.json()) as { tag_name?: string };
-      if (body.tag_name) latest = stripVersionPrefix(body.tag_name);
+      // The tag comes straight from the GitHub API — only trust it if it is a
+      // clean semver string. Anything else is dropped so it can't end up
+      // interpolated into the upgrade hint shown to the user.
+      if (body.tag_name) {
+        const candidate = stripVersionPrefix(body.tag_name);
+        if (isValidSemver(candidate)) latest = candidate;
+      }
     }
   } catch {
     // network failure / abort — fall through, keep cached if any
@@ -90,8 +96,16 @@ export function compareSemver(a: string, b: string): number {
 }
 
 export function buildUpdateNotice(current: string, latest: string): string | null {
+  // Defence in depth: never interpolate a non-semver string into the notice,
+  // even if it somehow reached here past the checkForUpdates validation.
+  if (!isValidSemver(latest)) return null;
   if (compareSemver(latest, current) <= 0) return null;
   return `\nA new version of thesignup is available: ${current} → ${latest}\nRun: bun install -g thesignup@${latest}    (or set THESIGNUP_NO_UPDATE_CHECK=1 to silence)\n`;
+}
+
+// Accepts `MAJOR.MINOR[.PATCH]` with an optional pre-release/build suffix.
+export function isValidSemver(v: string): boolean {
+  return /^\d+\.\d+(\.\d+)?(-[0-9A-Za-z][0-9A-Za-z.-]*)?(\+[0-9A-Za-z][0-9A-Za-z.-]*)?$/.test(v);
 }
 
 function result(

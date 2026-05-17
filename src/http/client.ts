@@ -54,10 +54,7 @@ export function createAuthenticatedClient(opts: AuthenticatedClientOptions): Aut
       }
       const fresh = await ensureFresh(creds);
       const apiBase = opts.apiBase ?? fresh.apiBase;
-      const url =
-        path.startsWith('http://') || path.startsWith('https://')
-          ? path
-          : `${stripTrailingSlash(apiBase)}${path.startsWith('/') ? path : `/${path}`}`;
+      const url = resolveRequestUrl(apiBase, path);
 
       const headers = new Headers(init.headers);
       headers.set('authorization', `Bearer ${fresh.accessToken}`);
@@ -90,4 +87,21 @@ export function createAuthenticatedClient(opts: AuthenticatedClientOptions): Aut
 
 function stripTrailingSlash(s: string): string {
   return s.endsWith('/') ? s.slice(0, -1) : s;
+}
+
+// Build the request URL from the configured API base. A relative path is
+// joined to the base; an absolute URL is only honoured when it points at the
+// same origin as the base. This prevents the bearer token from being attached
+// to a request aimed at an arbitrary host (e.g. an attacker-controlled
+// "next page" link returned in an API response).
+export function resolveRequestUrl(apiBase: string, path: string): string {
+  if (!/^https?:\/\//i.test(path)) {
+    return `${stripTrailingSlash(apiBase)}${path.startsWith('/') ? path : `/${path}`}`;
+  }
+  const target = new URL(path);
+  const base = new URL(apiBase);
+  if (target.origin !== base.origin) {
+    throw new Error(`refusing to send credentials to ${target.origin} — expected ${base.origin}`);
+  }
+  return target.href;
 }

@@ -36,4 +36,30 @@ describe('resolveProfile', () => {
     expect(resolveProfile({ flagProfile: 'work-1', env: {} }).name).toBe('work-1');
     expect(resolveProfile({ flagProfile: 'CI_2', env: {} }).name).toBe('CI_2');
   });
+
+  test('rejects a plain-HTTP API base on a non-loopback host', () => {
+    expect(() => resolveProfile({ flagApiBase: 'http://evil.example', env: {} })).toThrow(/HTTPS/);
+    expect(() =>
+      resolveProfile({ env: { THESIGNUP_API_BASE: 'http://api.thesignup.app' } }),
+    ).toThrow(/HTTPS/);
+  });
+
+  test('allows plain HTTP for loopback hosts (local dev / test servers)', () => {
+    expect(resolveProfile({ flagApiBase: 'http://localhost:3000', env: {} }).apiBase).toBe(
+      'http://localhost:3000',
+    );
+    expect(resolveProfile({ flagApiBase: 'http://127.0.0.1:8787', env: {} }).apiBase).toBe(
+      'http://127.0.0.1:8787',
+    );
+  });
+
+  test('accepts any HTTPS API base', () => {
+    expect(resolveProfile({ flagApiBase: 'https://api.thesignup.app', env: {} }).apiBase).toBe(
+      'https://api.thesignup.app',
+    );
+  });
+
+  test('rejects a malformed API base URL', () => {
+    expect(() => resolveProfile({ flagApiBase: 'not a url', env: {} })).toThrow(/invalid API base/);
+  });
 });
