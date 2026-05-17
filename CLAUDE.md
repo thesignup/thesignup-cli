@@ -63,6 +63,20 @@ test/mock-oauth-server.ts   # shared test fixture
 
 Tests live alongside the source as `*.test.ts`.
 
+## Cutting a release
+
+Only relevant when publishing a new version — normal development never touches this.
+
+1. Be on `main` with the gates above green.
+2. `npm version <patch|minor|major>` — bumps `package.json` and creates a matching `v…` tag.
+3. `git push --follow-tags`.
+
+Pushing the tag triggers `.github/workflows/release.yml`, which re-runs the gates, cross-compiles all five platform binaries, hashes them into `package.json` `binaryChecksums`, creates the GitHub release with the binaries attached, then `npm publish`es. The tag must match `package.json`'s version (step 2 keeps them in sync).
+
+Publishing uses **npm Trusted Publishing (OIDC)** — there is no stored npm token. The `thesignup` package on npmjs.com must list this repo and `release.yml` as a trusted publisher (npmjs.com → package → Settings → Trusted Publisher). Because that can only be configured once the package exists, the **first ever publish must be done manually** (`npm pkg delete private` → `npm publish --access public` with an interactive OTP → restore `private`); every release after that is just a tag push.
+
+The `binaryChecksums` entries stay empty in the repo on purpose — CI fills them into the published tarball; don't commit real hashes. `private: true` is likewise stripped by CI at publish time and should stay in the committed `package.json`.
+
 ## Things to avoid
 
 - No `axios` — use `fetch`.
