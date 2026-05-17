@@ -6,7 +6,11 @@ The official command-line tool for [thesignup](https://thesignup.app). Single-bi
 
 ## Install
 
-Pre-built binaries will be published to releases once the auth flow is end-to-end-verified. For now, build from source:
+```sh
+npm install -g @thesignup/cli
+```
+
+This installs the `thesignup` command. Or build from source:
 
 ```sh
 bun install
