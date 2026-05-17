@@ -1,0 +1,104 @@
+name: Release
+
+# Cut a release by pushing a tag that matches package.json's version:
+#   npm version patch        # bumps package.json + creates the v… tag
+#   git push --follow-tags
+#
+# This workflow runs the full CI gate suite, cross-compiles all five platform
+# binaries, hashes them, injects those SHA-256s into package.json (so the
+# published npm tarball can verify them in postinstall), publishes a GitHub
+# release with the binaries attached, then publishes to npm.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions:
+  contents: write # create the GitHub release + upload assets
+  id-token: write # npm provenance attestation
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v6
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Setup Node (for npm publish)
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          registry-url: https://registry.npmjs.org
+
+      - name: Verify tag matches package.json version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PKG_VERSION="$(node -p "require('./package.json').version")"
+          echo "tag: ${TAG_VERSION}   package.json: ${PKG_VERSION}"
+          if [ "$TAG_VERSION" != "$PKG_VERSION" ]; then
+            echo "::error::Tag ${GITHUB_REF_NAME} does not match package.json version ${PKG_VERSION}. Bump package.json and re-tag."
+            exit 1
+          fi
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
+
+      - name: Lint
+        run: bun run lint
+
+      - name: Format check
+        run: bun run format:check
+
+      - name: Typecheck
+        run: bun run typecheck
+
+      - name: Test
+        run: bun test
+
+      - name: Build all platform binaries
+        run: bun run build:all
+
+      - name: Compute & inject SHA-256 checksums
+        run: node scripts/write-checksums.cjs > dist/checksums.txt
+
+      - name: Show checksums
+        run: cat dist/checksums.txt
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${GITHUB_REF_NAME}" \
+            --title "${GITHUB_REF_NAME}" \
+            --generate-notes \
+            dist/thesignup-darwin-arm64 \
+            dist/thesignup-darwin-x64 \
+            dist/thesignup-linux-arm64 \
+            dist/thesignup-linux-x64 \
+            dist/thesignup-windows-x64.exe \
+            dist/checksums.txt
+
+      - name: Publish to npm (Trusted Publishing / OIDC)
+        run: |
+          # Trusted Publishing: npm exchanges this workflow's OIDC token (see
+          # `id-token: write` above) for a short-lived credential — there is no
+          # stored NPM_TOKEN to leak or rotate. Requires npm >= 11.5.1 and a
+          # trusted publisher configured for the `thesignup` package on
+          # npmjs.com (repo + this workflow file). Provenance is attached
+          # automatically under Trusted Publishing.
+          npm install -g npm@latest
+          npm --version
+          # `private: true` guards against accidental local publishes; CI
+          # strips it for this deliberate release only.
+          npm pkg delete private
+          npm publish --access public
