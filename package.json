@@ -1,6 +1,6 @@
 {
-  "name": "thesignup",
-  "version": "0.0.1",
+  "name": "@thesignup/cli",
+  "version": "0.0.2",
   "description": "thesignup command-line tool",
   "type": "module",
   "private": true,
