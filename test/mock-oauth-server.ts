@@ -6,6 +6,8 @@ import type {
   SignupAnalytics,
   Webhook,
   WebhookEvent,
+  TimeSlotDto,
+  ItemDto,
 } from '../src/api/types.ts';
 
 export type DeviceState =
@@ -42,6 +44,8 @@ export interface MockOAuthServer {
   lastTokenBody(): URLSearchParams;
   seedSignup(signup: Signup): void;
   seedParticipant(participant: Participant): void;
+  seedSlot(slot: TimeSlotDto): void;
+  seedItem(item: ItemDto): void;
   getSignup(idOrSlug: string): Signup | undefined;
   listSignups(): Signup[];
   listParticipants(signupId: string): Participant[];
@@ -64,6 +68,8 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
   const signupsById = new Map<string, Signup>();
   const slugIndex = new Map<string, string>();
   const participants = new Map<string, Participant>();
+  const slots = new Map<string, TimeSlotDto>();
+  const items = new Map<string, ItemDto>();
   const analytics = new Map<string, SignupAnalytics>();
   const recorded: RecordedRequest[] = [];
   let aiDraft: Partial<Signup> | null = null;
@@ -201,7 +207,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
       }
 
       const signupMatch = path.match(
-        /^\/v1\/signups\/([^/]+)(?:\/(participants|publish|duplicate|register|analytics)(?:\/([^/]+))?)?$/,
+        /^\/v1\/signups\/([^/]+)(?:\/(participants|publish|duplicate|analytics|slots|items)(?:\/([^/]+))?)?$/,
       );
 
       if (req.method === 'GET' && path === '/v1/signups') {
@@ -305,19 +311,69 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
             return jsonResponse(200, { participants: list });
           }
           if (req.method === 'POST') {
-            const body = (parsedBody ?? {}) as Partial<Participant>;
+            // Validate against the real server contract — see
+            // thesignup/src/app/api/v1/signups/[id]/participants/route.ts.
+            // The mock used to accept the CLI's fictional shape; this now
+            // mirrors the actual RegisterBodySchema.
+            const body = (parsedBody ?? {}) as {
+              name?: string;
+              email?: string;
+              phone?: string;
+              eventCustomFieldResponse?: string;
+              selections?: Array<{ type: 'slot' | 'item'; id: string; quantity: number }>;
+            };
+            if (!body.name || typeof body.name !== 'string') {
+              return jsonResponse(400, { error: 'bad_request', message: 'name is required' });
+            }
+            if (!body.email || typeof body.email !== 'string') {
+              return jsonResponse(400, { error: 'bad_request', message: 'email is required' });
+            }
+            const selections = Array.isArray(body.selections) ? body.selections : [];
+            for (const sel of selections) {
+              if (sel.type !== 'slot' && sel.type !== 'item') {
+                return jsonResponse(400, {
+                  error: 'bad_request',
+                  message: `selection.type must be slot|item, got ${String(sel.type)}`,
+                });
+              }
+              if (typeof sel.id !== 'string' || sel.id.length === 0) {
+                return jsonResponse(400, {
+                  error: 'bad_request',
+                  message: 'selection.id required',
+                });
+              }
+              if (!Number.isInteger(sel.quantity) || sel.quantity < 1) {
+                return jsonResponse(400, {
+                  error: 'bad_request',
+                  message: 'selection.quantity must be a positive integer',
+                });
+              }
+              if (sel.type === 'slot' && !slots.has(sel.id)) {
+                return jsonResponse(404, { error: 'not_found', message: `slot ${sel.id}` });
+              }
+              if (sel.type === 'item' && !items.has(sel.id)) {
+                return jsonResponse(404, { error: 'not_found', message: `item ${sel.id}` });
+              }
+            }
             const now = new Date().toISOString();
             const p: Participant = {
-              id: body.id ?? `pa_${randomUUID().slice(0, 8)}`,
+              id: `pa_${randomUUID().slice(0, 8)}`,
               signup_id: target.id,
-              name: body.name ?? 'Anonymous',
+              name: body.name,
+              email: body.email,
               created_at: now,
-              ...(body.email !== undefined ? { email: body.email } : {}),
-              ...(body.slot !== undefined ? { slot: body.slot } : {}),
-              ...(body.items !== undefined ? { items: body.items } : {}),
             };
             participants.set(p.id, p);
-            return jsonResponse(201, p);
+            return jsonResponse(201, {
+              id: p.id,
+              eventId: target.id,
+              name: body.name,
+              email: body.email,
+              phone: body.phone ?? null,
+              eventCustomFieldResponse: body.eventCustomFieldResponse ?? null,
+              selections,
+              createdAt: now,
+            });
           }
           if (req.method === 'DELETE' && subId) {
             const existing = participants.get(subId);
@@ -329,20 +385,13 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
           }
         }
 
-        if (sub === 'register' && req.method === 'POST') {
-          const body = (parsedBody ?? {}) as Partial<Participant>;
-          const now = new Date().toISOString();
-          const p: Participant = {
-            id: `pa_${randomUUID().slice(0, 8)}`,
-            signup_id: target.id,
-            name: body.name ?? 'Anonymous',
-            created_at: now,
-            ...(body.email !== undefined ? { email: body.email } : {}),
-            ...(body.slot !== undefined ? { slot: body.slot } : {}),
-            ...(body.items !== undefined ? { items: body.items } : {}),
-          };
-          participants.set(p.id, p);
-          return jsonResponse(201, p);
+        if (sub === 'slots' && req.method === 'GET') {
+          const list = [...slots.values()].filter((s) => s.eventId === target.id);
+          return jsonResponse(200, { data: list });
+        }
+        if (sub === 'items' && req.method === 'GET') {
+          const list = [...items.values()].filter((i) => i.eventId === target.id);
+          return jsonResponse(200, { data: list });
         }
 
         if (sub === 'analytics' && req.method === 'GET') {
@@ -484,6 +533,12 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
     },
     seedParticipant(participant) {
       participants.set(participant.id, participant);
+    },
+    seedSlot(slot) {
+      slots.set(slot.id, slot);
+    },
+    seedItem(item) {
+      items.set(item.id, item);
     },
     getSignup(idOrSlug) {
       return findSignup(idOrSlug);

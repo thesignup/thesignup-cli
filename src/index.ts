@@ -169,25 +169,43 @@ export function buildProgram(): Command {
     });
 
   participants
-    .command('add <signup>')
-    .description('add a participant to a signup')
+    .command('add <signup-uuid>')
+    .description('add a participant to a signup (alias for `register`)')
     .requiredOption('--name <name>', 'participant name')
-    .option('--email <email>', 'participant email')
-    .option('--slot <slot>', 'slot identifier or index')
-    .option('--items <items>', 'comma-separated items the participant is bringing')
+    .requiredOption('--email <email>', 'participant email')
+    .option('--phone <phone>', 'participant phone')
+    .option(
+      '--slot <ref>',
+      'slot UUID, exact title (case-insensitive), or "#1"/"#2"/... 1-based index',
+    )
+    .option(
+      '--item <ref:qty>',
+      'item UUID-or-name and quantity, e.g. "drinks:2". Repeat the flag for multiple items.',
+      (value: string, prior: string[] | undefined) => (prior ? [...prior, value] : [value]),
+    )
+    .option('--note <text>', 'response to the event-wide custom field, if the signup has one')
     .action(
       async (
         signup: string,
-        cmdOpts: { name: string; email?: string; slot?: string; items?: string },
+        cmdOpts: {
+          name: string;
+          email: string;
+          phone?: string;
+          slot?: string;
+          item?: string[];
+          note?: string;
+        },
       ) => {
         const g = pickGlobals(program);
         const code = await runParticipantsAdd({
           ...g,
           signup,
           name: cmdOpts.name,
-          ...(cmdOpts.email ? { email: cmdOpts.email } : {}),
+          email: cmdOpts.email,
+          ...(cmdOpts.phone ? { phone: cmdOpts.phone } : {}),
           ...(cmdOpts.slot ? { slot: cmdOpts.slot } : {}),
-          ...(cmdOpts.items ? { items: cmdOpts.items } : {}),
+          ...(cmdOpts.item ? { item: cmdOpts.item } : {}),
+          ...(cmdOpts.note ? { note: cmdOpts.note } : {}),
         });
         process.exitCode = code;
       },
@@ -206,25 +224,43 @@ export function buildProgram(): Command {
     });
 
   program
-    .command('register <target>')
-    .description('register yourself for a signup (id, slug, or URL)')
-    .option('--name <name>', 'registrant name (defaults to logged-in identity if omitted)')
-    .option('--email <email>', 'registrant email')
-    .option('--slot <slot>', 'slot identifier or index')
-    .option('--items <items>', 'comma-separated items')
+    .command('register <signup-uuid>')
+    .description('register a participant on a signup')
+    .requiredOption('--name <name>', 'registrant name')
+    .requiredOption('--email <email>', 'registrant email')
+    .option('--phone <phone>', 'registrant phone')
+    .option(
+      '--slot <ref>',
+      'slot UUID, exact title (case-insensitive), or "#1"/"#2"/... 1-based index',
+    )
+    .option(
+      '--item <ref:qty>',
+      'item UUID-or-name and quantity, e.g. "drinks:2". Repeat the flag for multiple items.',
+      (value: string, prior: string[] | undefined) => (prior ? [...prior, value] : [value]),
+    )
+    .option('--note <text>', 'response to the event-wide custom field, if the signup has one')
     .action(
       async (
         target: string,
-        cmdOpts: { name?: string; email?: string; slot?: string; items?: string },
+        cmdOpts: {
+          name: string;
+          email: string;
+          phone?: string;
+          slot?: string;
+          item?: string[];
+          note?: string;
+        },
       ) => {
         const g = pickGlobals(program);
         const code = await runRegister({
           ...g,
           target,
-          ...(cmdOpts.name ? { name: cmdOpts.name } : {}),
-          ...(cmdOpts.email ? { email: cmdOpts.email } : {}),
+          name: cmdOpts.name,
+          email: cmdOpts.email,
+          ...(cmdOpts.phone ? { phone: cmdOpts.phone } : {}),
           ...(cmdOpts.slot ? { slot: cmdOpts.slot } : {}),
-          ...(cmdOpts.items ? { items: cmdOpts.items } : {}),
+          ...(cmdOpts.item ? { item: cmdOpts.item } : {}),
+          ...(cmdOpts.note ? { note: cmdOpts.note } : {}),
         });
         process.exitCode = code;
       },

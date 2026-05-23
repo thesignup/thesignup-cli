@@ -54,6 +54,35 @@ export interface AiDraftResponse {
   draft: Partial<Signup>;
 }
 
+// camelCase to match server DTOs. See thesignup/src/app/api/v1/signups/[id]/_subresources.ts.
+export interface TimeSlotDto {
+  id: string;
+  eventId: string;
+  startTime: string;
+  endTime: string;
+  maxParticipants: number;
+  title: string | null;
+  description: string | null;
+  location: string | null;
+}
+
+export interface ItemDto {
+  id: string;
+  eventId: string;
+  name: string;
+  description: string | null;
+  quantityNeeded: number;
+  maxContributors: number;
+}
+
+export interface ListSlotsResponse {
+  data: TimeSlotDto[];
+}
+
+export interface ListItemsResponse {
+  data: ItemDto[];
+}
+
 export type WebhookStatus = 'active' | 'paused' | 'failing';
 
 export interface Webhook {
