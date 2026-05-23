@@ -30,7 +30,7 @@ describe('runAiDraft', () => {
     expect(code).toBe(0);
     const last = fx.server.recordedRequests().at(-1);
     expect(last?.method).toBe('POST');
-    expect(last?.path).toBe('/v1/ai/draft');
+    expect(last?.path).toBe('/v1/signups/from-description');
     expect((last?.body as { description: string }).description).toBe('Pizza meetup for the team');
   });
 
@@ -40,6 +40,8 @@ describe('runAiDraft', () => {
       { storeFactory: fx.storeFactory },
     );
     expect(code).toBe(1);
-    expect(fx.server.recordedRequests().some((r) => r.path === '/v1/ai/draft')).toBe(false);
+    expect(
+      fx.server.recordedRequests().some((r) => r.path === '/v1/signups/from-description'),
+    ).toBe(false);
   });
 });

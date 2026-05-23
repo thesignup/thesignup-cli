@@ -51,7 +51,7 @@ export interface ListParticipantsResponse {
 }
 
 export interface AiDraftResponse {
-  signup: Partial<Signup>;
+  draft: Partial<Signup>;
 }
 
 export type WebhookStatus = 'active' | 'paused' | 'failing';

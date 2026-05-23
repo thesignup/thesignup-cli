@@ -136,11 +136,16 @@ async function runSignupAction(
   const ctx = makeOutput({ json: opts.json });
   try {
     const { client } = buildClient(opts, deps);
-    const result = await apiJson<Signup>(
-      client,
-      `/v1/signups/${encodeURIComponent(opts.ref)}/${action}`,
-      { method: 'POST' },
-    );
+    // cancel is a soft-delete on the base resource (server emits
+    // signup.canceled). publish/duplicate are separate action routes.
+    const { path, method } =
+      action === 'cancel'
+        ? { path: `/v1/signups/${encodeURIComponent(opts.ref)}`, method: 'DELETE' as const }
+        : {
+            path: `/v1/signups/${encodeURIComponent(opts.ref)}/${action}`,
+            method: 'POST' as const,
+          };
+    const result = await apiJson<Signup>(client, path, { method });
     emit(ctx, { ok: true, action, signup: result }, [
       `${verb} signup ${result.id} (${result.slug}).`,
       ...formatSignupDetail(result),
