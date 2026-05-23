@@ -175,7 +175,7 @@ describe('signups view', () => {
 });
 
 describe('signups cancel / publish / duplicate', () => {
-  test('cancel POSTs and reports canceled status', async () => {
+  test('cancel DELETEs the base resource and reports canceled status', async () => {
     fx.server.seedSignup(makeSignup({ id: 'su_x', slug: 'x', status: 'active' }));
     const code = await runSignupsCancel(
       { profile: fx.profile, apiBase: fx.server.url, json: true, ref: 'x' },
@@ -183,6 +183,9 @@ describe('signups cancel / publish / duplicate', () => {
     );
     expect(code).toBe(0);
     expect(fx.server.getSignup('x')?.status).toBe('canceled');
+    const last = fx.server.recordedRequests().at(-1);
+    expect(last?.method).toBe('DELETE');
+    expect(last?.path).toBe('/v1/signups/x');
   });
 
   test('publish POSTs and reports active', async () => {

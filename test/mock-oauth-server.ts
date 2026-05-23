@@ -201,7 +201,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
       }
 
       const signupMatch = path.match(
-        /^\/v1\/signups\/([^/]+)(?:\/(participants|cancel|publish|duplicate|register|analytics)(?:\/([^/]+))?)?$/,
+        /^\/v1\/signups\/([^/]+)(?:\/(participants|publish|duplicate|register|analytics)(?:\/([^/]+))?)?$/,
       );
 
       if (req.method === 'GET' && path === '/v1/signups') {
@@ -212,6 +212,16 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
         list.sort((a, b) => b.created_at.localeCompare(a.created_at));
         if (limit !== undefined) list = list.slice(0, limit);
         return jsonResponse(200, { signups: list });
+      }
+
+      if (path === '/v1/signups/from-description' && req.method === 'POST') {
+        const body = (parsedBody ?? {}) as { description?: string };
+        const draft = aiDraft ?? {
+          title: body.description ?? 'AI-drafted signup',
+          status: 'draft' as const,
+          description: body.description ?? '',
+        };
+        return jsonResponse(200, { draft });
       }
 
       if (req.method === 'POST' && path === '/v1/signups') {
@@ -258,17 +268,17 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
             return jsonResponse(200, updated);
           }
           if (req.method === 'DELETE') {
-            signupsById.delete(target.id);
-            slugIndex.delete(target.slug);
-            return new Response(null, { status: 204 });
+            // Server treats DELETE as soft-cancel — mirrors EventService.deleteForOrgApi.
+            const updated = {
+              ...target,
+              status: 'canceled' as const,
+              updated_at: new Date().toISOString(),
+            };
+            indexSignup(updated);
+            return jsonResponse(200, updated);
           }
         }
 
-        if (sub === 'cancel' && req.method === 'POST') {
-          const updated = { ...target, status: 'canceled' as const, updated_at: new Date().toISOString() };
-          indexSignup(updated);
-          return jsonResponse(200, updated);
-        }
         if (sub === 'publish' && req.method === 'POST') {
           const updated = { ...target, status: 'active' as const, updated_at: new Date().toISOString() };
           indexSignup(updated);
@@ -344,16 +354,6 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
           };
           return jsonResponse(200, a);
         }
-      }
-
-      if (path === '/v1/ai/draft' && req.method === 'POST') {
-        const body = (parsedBody ?? {}) as { description?: string };
-        const signup = aiDraft ?? {
-          title: body.description ?? 'AI-drafted signup',
-          status: 'draft' as const,
-          description: body.description ?? '',
-        };
-        return jsonResponse(200, { signup });
       }
 
       if (path === '/v1/webhooks' && req.method === 'GET') {

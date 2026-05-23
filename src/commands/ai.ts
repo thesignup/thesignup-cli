@@ -18,14 +18,14 @@ export async function runAiDraft(opts: AiDraftOptions, deps: ClientDeps = {}): P
   try {
     if (!opts.description) throw new Error('description is required');
     const { client } = buildClient(opts, deps);
-    const res = await apiJson<AiDraftResponse>(client, '/v1/ai/draft', {
+    const res = await apiJson<AiDraftResponse>(client, '/v1/signups/from-description', {
       method: 'POST',
       body: JSON.stringify({ description: opts.description }),
     });
-    emit(ctx, { ok: true, signup: res.signup }, [
+    emit(ctx, { ok: true, draft: res.draft }, [
       '# Drafted signup (review, then `thesignup signups create --file`)',
       '',
-      yamlStringify(res.signup),
+      yamlStringify(res.draft),
     ]);
     return 0;
   } catch (err) {
