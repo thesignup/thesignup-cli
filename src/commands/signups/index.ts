@@ -5,7 +5,7 @@ import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml';
 import type { Signup, ListSignupsResponse, SignupStatus } from '../../api/types.ts';
-import { emit, makeOutput } from '../../util/output.ts';
+import { emit, makeOutput, type OutputContext } from '../../util/output.ts';
 import {
   apiJson,
   buildClient,
@@ -14,36 +14,79 @@ import {
   type CommonOptions,
 } from '../util/api.ts';
 import { formatSignupDetail, formatSignupRow, signupHeader } from '../util/format.ts';
+import { runWatch, type WatchEnvelope } from '../util/watch.ts';
+import type { AuthenticatedClient } from '../../http/client.ts';
+
+// Webhook event types that affect a signups-list view. Anything
+// touching the lifecycle of an event row gets us — registration-side
+// events are handled by participants list.
+const SIGNUPS_WATCH_EVENTS: readonly string[] = [
+  'signup.created',
+  'signup.updated',
+  'signup.published',
+  'signup.canceled',
+  'signup.completed',
+];
 
 export interface SignupListOptions extends CommonOptions {
   status?: SignupStatus;
   limit?: number;
+  watch?: boolean;
+  signal?: AbortSignal;
+}
+
+export interface SignupListDeps extends ClientDeps {
+  fetchImpl?: typeof fetch;
+  sleep?: (ms: number) => Promise<void>;
+  // Test seam: notified for each envelope the --watch loop processes.
+  onWatchEvent?: (envelope: WatchEnvelope) => void;
 }
 
 export async function runSignupsList(
   opts: SignupListOptions = {},
-  deps: ClientDeps = {},
+  deps: SignupListDeps = {},
 ): Promise<number> {
   const ctx = makeOutput({ json: opts.json });
   try {
     const { client } = buildClient(opts, deps);
-    const qs = new URLSearchParams();
-    if (opts.status) qs.set('status', opts.status);
-    if (opts.limit !== undefined) qs.set('limit', String(opts.limit));
-    const path = qs.toString() ? `/v1/signups?${qs}` : '/v1/signups';
-    const data = await apiJson<ListSignupsResponse>(client, path);
-    if (data.signups.length === 0) {
-      emit(ctx, { ok: true, signups: [] }, ['No signups.']);
+    const render = (): Promise<void> => renderSignupsList(client, ctx, opts);
+    if (!opts.watch) {
+      await render();
       return 0;
     }
-    emit(ctx, { ok: true, signups: data.signups }, [
-      signupHeader(),
-      ...data.signups.map(formatSignupRow),
-    ]);
-    return 0;
+    return await runWatch({
+      client,
+      ctx,
+      events: SIGNUPS_WATCH_EVENTS,
+      render,
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(deps.fetchImpl ? { fetchImpl: deps.fetchImpl } : {}),
+      ...(deps.sleep ? { sleep: deps.sleep } : {}),
+      ...(deps.onWatchEvent ? { onEvent: deps.onWatchEvent } : {}),
+    });
   } catch (err) {
     return failWithError(ctx, err);
   }
+}
+
+async function renderSignupsList(
+  client: AuthenticatedClient,
+  ctx: OutputContext,
+  opts: SignupListOptions,
+): Promise<void> {
+  const qs = new URLSearchParams();
+  if (opts.status) qs.set('status', opts.status);
+  if (opts.limit !== undefined) qs.set('limit', String(opts.limit));
+  const path = qs.toString() ? `/v1/signups?${qs}` : '/v1/signups';
+  const data = await apiJson<ListSignupsResponse>(client, path);
+  if (data.signups.length === 0) {
+    emit(ctx, { ok: true, signups: [] }, ['No signups.']);
+    return;
+  }
+  emit(ctx, { ok: true, signups: data.signups }, [
+    signupHeader(),
+    ...data.signups.map(formatSignupRow),
+  ]);
 }
 
 export interface SignupCreateOptions extends CommonOptions {

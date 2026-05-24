@@ -1,5 +1,6 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { runWebhooksListen, __internals } from './listen.ts';
+import { parseSseEvent } from '../../http/sse-stream.ts';
 import { createCommandFixture, type CommandFixture } from '../../../test/command-fixture.ts';
 import type { WebhookEvent } from '../../api/types.ts';
 
@@ -38,20 +39,20 @@ function startForwarder(responseStatus = 200): ForwarderHandle {
 
 describe('listen internals', () => {
   test('parseSseEvent handles standard event blocks', () => {
-    const ev = __internals.parseSseEvent('id: 1\nevent: ping\ndata: {"a":1}');
+    const ev = parseSseEvent('id: 1\nevent: ping\ndata: {"a":1}');
     expect(ev?.id).toBe('1');
     expect(ev?.event).toBe('ping');
     expect(ev?.data).toBe('{"a":1}');
   });
 
   test('parseSseEvent joins multi-line data', () => {
-    const ev = __internals.parseSseEvent('data: line1\ndata: line2');
+    const ev = parseSseEvent('data: line1\ndata: line2');
     expect(ev?.data).toBe('line1\nline2');
   });
 
   test('parseSseEvent returns null for blocks with no data', () => {
-    expect(__internals.parseSseEvent(': heartbeat')).toBeNull();
-    expect(__internals.parseSseEvent('id: 1')).toBeNull();
+    expect(parseSseEvent(': heartbeat')).toBeNull();
+    expect(parseSseEvent('id: 1')).toBeNull();
   });
 
   test('normalizeForwardUrl prefixes http and localhost as needed', () => {
@@ -79,14 +80,14 @@ describe('runWebhooksListen (integration)', () => {
     await fx.cleanup();
   });
 
-  test('forwards a streamed event to --forward-to with signature headers', async () => {
+  test('forwards a streamed event envelope to --forward-to without a signature', async () => {
     const controller = new AbortController();
     const event: WebhookEvent = {
       id: 'evt_1',
       type: 'signup.created',
-      payload: { id: 'su_1', title: 'Picnic' },
-      signature: 't=1700000000,v1=abc123',
-      delivered_at: '2026-05-11T00:00:00Z',
+      created: 1700000000,
+      organizationId: 'org_1',
+      data: { id: 'su_1', title: 'Picnic' },
     };
 
     // Publish the event after a beat so the stream is open before the broadcast.
@@ -119,39 +120,10 @@ describe('runWebhooksListen (integration)', () => {
     expect(got).toBeDefined();
     expect(got?.headers['thesignup-event-id']).toBe('evt_1');
     expect(got?.headers['thesignup-event-type']).toBe('signup.created');
-    expect(got?.headers['thesignup-signature']).toBe('t=1700000000,v1=abc123');
+    // SSE-streamed envelopes carry no signature — verify the forward
+    // call leaves the signing header off entirely.
+    expect(got?.headers['thesignup-signature']).toBeUndefined();
     expect((got?.body as { id: string }).id).toBe('su_1');
-  });
-
-  test('uses event.signature_header_name when provided', async () => {
-    const controller = new AbortController();
-    const event: WebhookEvent = {
-      id: 'evt_2',
-      type: 'signup.updated',
-      payload: { id: 'su_2' },
-      signature: 'sig-xyz',
-      signature_header_name: 'x-custom-signature',
-      delivered_at: '2026-05-11T00:00:01Z',
-    };
-    const publishTimer = setTimeout(() => fx.server.publishWebhookEvent(event), 100);
-
-    const code = await runWebhooksListen(
-      {
-        profile: fx.profile,
-        apiBase: fx.server.url,
-        json: true,
-        forwardTo: forwarder.url,
-        signal: controller.signal,
-      },
-      {
-        storeFactory: fx.storeFactory,
-        onEvent: () => controller.abort(),
-      },
-    );
-    clearTimeout(publishTimer);
-    expect(code).toBe(0);
-    expect(forwarder.received[0]?.headers['x-custom-signature']).toBe('sig-xyz');
-    expect(forwarder.received[0]?.headers['thesignup-signature']).toBeUndefined();
   });
 
   test('signal-abort exits cleanly without forwarding anything', async () => {
@@ -189,9 +161,9 @@ describe('runWebhooksListen (integration)', () => {
       fx.server.publishWebhookEvent({
         id: 'evt_a',
         type: 'signup.created',
-        payload: {},
-        signature: 's1',
-        delivered_at: '2026-05-11T00:00:00Z',
+        created: 1700000000,
+        organizationId: 'org_1',
+        data: {},
       });
       setTimeout(() => fx.server.closeEventStreams(), 30);
     }, 50);
@@ -200,9 +172,9 @@ describe('runWebhooksListen (integration)', () => {
       fx.server.publishWebhookEvent({
         id: 'evt_b',
         type: 'signup.updated',
-        payload: {},
-        signature: 's2',
-        delivered_at: '2026-05-11T00:00:01Z',
+        created: 1700000001,
+        organizationId: 'org_1',
+        data: {},
       });
     }, 250);
 

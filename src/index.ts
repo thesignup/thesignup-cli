@@ -85,12 +85,20 @@ export function buildProgram(): Command {
     .description('list signups')
     .option('--status <status>', 'filter by status (draft, active, archived, canceled)')
     .option('--limit <n>', 'maximum number of signups to return', (v) => Number(v))
-    .action(async (cmdOpts: { status?: SignupStatus; limit?: number }) => {
+    .option(
+      '--watch',
+      'live-update the table on signup events via the /v1/webhooks/events SSE stream (Ctrl-C to stop)',
+    )
+    .action(async (cmdOpts: { status?: SignupStatus; limit?: number; watch?: boolean }) => {
       const g = pickGlobals(program);
+      const controller = cmdOpts.watch ? new AbortController() : null;
+      if (controller) process.on('SIGINT', () => controller.abort());
       const code = await runSignupsList({
         ...g,
         ...(cmdOpts.status ? { status: cmdOpts.status } : {}),
         ...(cmdOpts.limit !== undefined ? { limit: cmdOpts.limit } : {}),
+        ...(cmdOpts.watch ? { watch: true } : {}),
+        ...(controller ? { signal: controller.signal } : {}),
       });
       process.exitCode = code;
     });
@@ -163,8 +171,19 @@ export function buildProgram(): Command {
   participants
     .command('list <signup>')
     .description('list participants for a signup')
-    .action(async (signup: string) => {
-      const code = await runParticipantsList({ ...pickGlobals(program), signup });
+    .option(
+      '--watch',
+      'live-update the table on participant/slot/item events via SSE (Ctrl-C to stop)',
+    )
+    .action(async (signup: string, cmdOpts: { watch?: boolean }) => {
+      const controller = cmdOpts.watch ? new AbortController() : null;
+      if (controller) process.on('SIGINT', () => controller.abort());
+      const code = await runParticipantsList({
+        ...pickGlobals(program),
+        signup,
+        ...(cmdOpts.watch ? { watch: true } : {}),
+        ...(controller ? { signal: controller.signal } : {}),
+      });
       process.exitCode = code;
     });
 
