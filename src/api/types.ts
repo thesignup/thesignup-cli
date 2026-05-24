@@ -100,11 +100,16 @@ export interface ListWebhooksResponse {
   webhooks: Webhook[];
 }
 
+// Envelope emitted by GET /v1/webhooks/events (the SSE listen stream).
+// Matches the server's WebhookEnvelope from thesignup/src/server/webhooks/types.ts.
+// Note: SSE-streamed events do NOT carry a signature — signing is
+// applied per-endpoint at HTTP delivery time. Receivers that need to
+// verify signatures should register a real webhook endpoint (POST
+// /v1/webhooks) instead of consuming the live stream.
 export interface WebhookEvent {
   id: string;
   type: string;
-  payload: unknown;
-  signature: string;
-  signature_header_name?: string;
-  delivered_at: string;
+  created: number;
+  organizationId: string;
+  data: Record<string, unknown>;
 }

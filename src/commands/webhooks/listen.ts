@@ -1,10 +1,7 @@
 import type { WebhookEvent } from '../../api/types.ts';
 import { emit, emitError, makeOutput } from '../../util/output.ts';
 import { buildClient, failWithError, type ClientDeps, type CommonOptions } from '../util/api.ts';
-import type { AuthenticatedClient } from '../../http/client.ts';
-
-const DEFAULT_SIGNATURE_HEADER = 'thesignup-signature';
-const MAX_RETRY_BACKOFF_MS = 30_000;
+import { streamSse } from '../../http/sse-stream.ts';
 
 export interface WebhooksListenOptions extends CommonOptions {
   forwardTo: string;
@@ -32,7 +29,6 @@ export async function runWebhooksListen(
     const forwardUrl = normalizeForwardUrl(opts.forwardTo);
     const { client } = buildClient(opts, deps);
     const fetchImpl = deps.fetchImpl ?? fetch;
-    const sleep = deps.sleep ?? defaultSleep;
     const maxRetries = opts.maxRetries ?? 5;
 
     const events = (opts.events ?? '')
@@ -47,115 +43,30 @@ export async function runWebhooksListen(
       );
     }
 
-    let attempt = 0;
-    while (true) {
-      if (opts.signal?.aborted) return 0;
-      try {
-        await streamEvents({
-          client,
-          path: `/v1/webhooks/events${qs}`,
-          fetchImpl,
-          forwardUrl,
-          ctx,
-          signal: opts.signal,
-          onEvent: deps.onEvent,
-        });
-        // Server closed cleanly — exit if we've been asked to stop, else reconnect
-        if (opts.signal?.aborted) return 0;
-        attempt = 0;
-      } catch (err) {
-        if (opts.signal?.aborted) return 0;
-        attempt++;
-        if (attempt > maxRetries) throw err;
-        const delay = Math.min(MAX_RETRY_BACKOFF_MS, 500 * 2 ** (attempt - 1));
+    await streamSse({
+      client,
+      path: `/v1/webhooks/events${qs}`,
+      ...(opts.signal ? { signal: opts.signal } : {}),
+      ...(deps.sleep ? { sleep: deps.sleep } : {}),
+      maxRetries,
+      onReconnect: (attempt, delay, err) => {
+        if (ctx.format !== 'pretty') return;
         const msg = err instanceof Error ? err.message : String(err);
-        if (ctx.format === 'pretty') {
-          ctx.stderr.write(
-            `connection error (${msg}); reconnecting in ${delay}ms (attempt ${attempt}/${maxRetries})\n`,
-          );
-        }
-        await sleep(delay);
-      }
-    }
+        ctx.stderr.write(
+          `connection error (${msg}); reconnecting in ${delay}ms (attempt ${attempt}/${maxRetries})\n`,
+        );
+      },
+      onEvent: async (sse) => {
+        const parsed = safeParseEvent(sse.data);
+        if (!parsed) return;
+        deps.onEvent?.(parsed);
+        await forwardEvent(fetchImpl, forwardUrl, parsed, ctx);
+      },
+    });
+    return 0;
   } catch (err) {
     return failWithError(ctx, err);
   }
-}
-
-interface StreamEventsArgs {
-  client: AuthenticatedClient;
-  path: string;
-  fetchImpl: typeof fetch;
-  forwardUrl: string;
-  ctx: ReturnType<typeof makeOutput>;
-  signal?: AbortSignal | undefined;
-  onEvent?: ((event: WebhookEvent) => void) | undefined;
-}
-
-async function streamEvents(args: StreamEventsArgs): Promise<void> {
-  const headers = new Headers({ accept: 'text/event-stream' });
-  const init: RequestInit = { headers };
-  if (args.signal) init.signal = args.signal;
-  const res = await args.client.fetch(args.path, init);
-  if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`event stream returned HTTP ${res.status}: ${text.slice(0, 200)}`);
-  }
-  if (!res.body) throw new Error('event stream response had no body');
-  const reader = res.body.getReader();
-  const decoder = new TextDecoder();
-  let buffer = '';
-  try {
-    while (true) {
-      const { value, done } = await reader.read();
-      if (done) return;
-      buffer += decoder.decode(value, { stream: true });
-      let sep: number;
-      while ((sep = buffer.indexOf('\n\n')) !== -1) {
-        const block = buffer.slice(0, sep);
-        buffer = buffer.slice(sep + 2);
-        const event = parseSseEvent(block);
-        if (!event) continue;
-        const parsed = safeParseEvent(event.data);
-        if (!parsed) continue;
-        args.onEvent?.(parsed);
-        await forwardEvent(args.fetchImpl, args.forwardUrl, parsed, args.ctx);
-      }
-    }
-  } finally {
-    try {
-      reader.releaseLock();
-    } catch {
-      // ignore
-    }
-  }
-}
-
-interface SseEvent {
-  id?: string;
-  event?: string;
-  data: string;
-}
-
-function parseSseEvent(block: string): SseEvent | null {
-  const lines = block.split('\n');
-  const dataParts: string[] = [];
-  let id: string | undefined;
-  let event: string | undefined;
-  for (const line of lines) {
-    if (!line || line.startsWith(':')) continue;
-    const idx = line.indexOf(':');
-    const field = idx === -1 ? line : line.slice(0, idx);
-    const value = idx === -1 ? '' : line.slice(idx + 1).replace(/^\s/, '');
-    if (field === 'data') dataParts.push(value);
-    else if (field === 'id') id = value;
-    else if (field === 'event') event = value;
-  }
-  if (dataParts.length === 0) return null;
-  const out: SseEvent = { data: dataParts.join('\n') };
-  if (id !== undefined) out.id = id;
-  if (event !== undefined) out.event = event;
-  return out;
 }
 
 function safeParseEvent(json: string): WebhookEvent | null {
@@ -172,12 +83,14 @@ async function forwardEvent(
   event: WebhookEvent,
   ctx: ReturnType<typeof makeOutput>,
 ): Promise<void> {
-  const sigHeader = event.signature_header_name ?? DEFAULT_SIGNATURE_HEADER;
+  // SSE-streamed envelopes don't carry a signature — signing is per-
+  // endpoint at HTTP delivery time. Receivers that need to verify
+  // signatures should register a real webhook endpoint (POST
+  // /v1/webhooks) instead of consuming the live stream.
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'thesignup-event-id': event.id,
     'thesignup-event-type': event.type,
-    [sigHeader]: event.signature,
   };
   let status = 0;
   let errMsg: string | undefined;
@@ -185,7 +98,7 @@ async function forwardEvent(
     const res = await fetchImpl(forwardUrl, {
       method: 'POST',
       headers,
-      body: JSON.stringify(event.payload),
+      body: JSON.stringify(event.data),
     });
     status = res.status;
   } catch (err) {
@@ -221,12 +134,7 @@ function normalizeForwardUrl(target: string): string {
   return `http://${target}`;
 }
 
-function defaultSleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 // Exposed for tests
 export const __internals = {
-  parseSseEvent,
   normalizeForwardUrl,
 };
