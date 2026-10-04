@@ -3,6 +3,7 @@ import { createCredentialStore, type CredentialStore } from '../../storage/crede
 import { resolveProfile, type ProfileContext } from '../../config/profile.ts';
 import { DEFAULT_CLIENT_ID } from '../auth/login.ts';
 import { emitError, type OutputContext } from '../../util/output.ts';
+import { InsufficientScopeError, matchInsufficientScope } from '../../http/insufficient-scope.ts';
 
 export interface CommonOptions {
   profile?: string;
@@ -74,6 +75,8 @@ export async function apiJson<T>(
     } catch {
       body = { message: text };
     }
+    const scopeMatch = matchInsufficientScope(res.status, res.headers, body);
+    if (scopeMatch) throw new InsufficientScopeError(scopeMatch.requiredScope);
     const message = body?.message ?? body?.error ?? `HTTP ${res.status}`;
     throw new ApiError(res.status, message, body, body?.code ?? body?.error);
   }
@@ -82,6 +85,10 @@ export async function apiJson<T>(
 }
 
 export function failWithError(ctx: OutputContext, err: unknown): number {
+  if (err instanceof InsufficientScopeError) {
+    emitError(ctx, err.message, err.code);
+    return 1;
+  }
   if (err instanceof ApiError) {
     emitError(ctx, err.message, err.code ?? `http_${err.status}`);
     return 1;

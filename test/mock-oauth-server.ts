@@ -57,6 +57,10 @@ export interface MockOAuthServer {
   getWebhook(id: string): Webhook | undefined;
   publishWebhookEvent(event: WebhookEvent): void;
   closeEventStreams(): void;
+  // Answer every /v1 request whose path starts with `pathPrefix` with the API's
+  // real 403 shape: a "forbidden" problem body plus an RFC 6750
+  // `WWW-Authenticate: ... error="insufficient_scope"` challenge.
+  denyScope(pathPrefix: string, scope: string): void;
 }
 
 export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOAuthServer {
@@ -77,6 +81,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
   const eventStreamControllers = new Set<ReadableStreamDefaultController<Uint8Array>>();
 
   const requireAuth = opts.requireAuth ?? true;
+  const deniedScopes: Array<{ pathPrefix: string; scope: string }> = [];
 
   const findSignup = (idOrSlug: string): Signup | undefined => {
     const direct = signupsById.get(idOrSlug);
@@ -204,6 +209,25 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
 
       if (requireAuth && !authHeader?.startsWith('Bearer ')) {
         return jsonResponse(401, { error: 'unauthorized' });
+      }
+
+      const denied = deniedScopes.find((d) => path.startsWith(d.pathPrefix));
+      if (denied) {
+        return new Response(
+          JSON.stringify({
+            title: 'Forbidden',
+            status: 403,
+            detail: `Missing required scope: ${denied.scope}`,
+            code: 'forbidden',
+          }),
+          {
+            status: 403,
+            headers: {
+              'content-type': 'application/problem+json',
+              'www-authenticate': `Bearer realm="thesignup", error="insufficient_scope", error_description="Missing required scope: ${denied.scope}", scope="${denied.scope}"`,
+            },
+          },
+        );
       }
 
       const signupMatch = path.match(
@@ -572,6 +596,9 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
     },
     closeEventStreams() {
       closeStreams();
+    },
+    denyScope(pathPrefix, scope) {
+      deniedScopes.push({ pathPrefix, scope });
     },
   };
 }
