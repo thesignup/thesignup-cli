@@ -95,13 +95,18 @@ function stripTrailingSlash(s: string): string {
 // to a request aimed at an arbitrary host (e.g. an attacker-controlled
 // "next page" link returned in an API response).
 export function resolveRequestUrl(apiBase: string, path: string): string {
+  let target: URL;
   if (!/^https?:\/\//i.test(path)) {
-    return `${stripTrailingSlash(apiBase)}${path.startsWith('/') ? path : `/${path}`}`;
+    target = new URL(`${stripTrailingSlash(apiBase)}${path.startsWith('/') ? path : `/${path}`}`);
+  } else {
+    target = new URL(path);
+    const base = new URL(apiBase);
+    if (target.origin !== base.origin) {
+      throw new Error(`refusing to send credentials to ${target.origin} — expected ${base.origin}`);
+    }
   }
-  const target = new URL(path);
-  const base = new URL(apiBase);
-  if (target.origin !== base.origin) {
-    throw new Error(`refusing to send credentials to ${target.origin} — expected ${base.origin}`);
+  if (!target.pathname.startsWith('/api/v1/')) {
+    throw new Error('REST requests must use /api/v1/...');
   }
   return target.href;
 }

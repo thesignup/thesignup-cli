@@ -53,7 +53,7 @@ describe('signups list', () => {
 
     const last = fx.server.recordedRequests().at(-1);
     expect(last?.method).toBe('GET');
-    expect(last?.path).toBe('/v1/signups');
+    expect(last?.path).toBe('/api/v1/signups');
     expect(last?.query.status).toBe('active');
     expect(last?.authorization).toBe('Bearer at_test_token');
   });
@@ -105,7 +105,7 @@ describe('signups create', () => {
     expect(code).toBe(0);
     const last = fx.server.recordedRequests().at(-1);
     expect(last?.method).toBe('POST');
-    expect(last?.path).toBe('/v1/signups');
+    expect(last?.path).toBe('/api/v1/signups');
     expect((last?.body as { description: string }).description).toBe('Sunday brunch');
   });
 
@@ -162,7 +162,7 @@ describe('signups view', () => {
       { storeFactory: fx.storeFactory },
     );
     expect(code).toBe(0);
-    expect(fx.server.recordedRequests().at(-1)?.path).toBe('/v1/signups/view-me');
+    expect(fx.server.recordedRequests().at(-1)?.path).toBe('/api/v1/signups/view-me');
   });
 
   test('404 → exit 1', async () => {
@@ -185,7 +185,7 @@ describe('signups cancel / publish / duplicate', () => {
     expect(fx.server.getSignup('x')?.status).toBe('canceled');
     const last = fx.server.recordedRequests().at(-1);
     expect(last?.method).toBe('DELETE');
-    expect(last?.path).toBe('/v1/signups/x');
+    expect(last?.path).toBe('/api/v1/signups/x');
   });
 
   test('publish POSTs and reports active', async () => {

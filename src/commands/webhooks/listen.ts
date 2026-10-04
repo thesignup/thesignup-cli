@@ -45,7 +45,7 @@ export async function runWebhooksListen(
 
     await streamSse({
       client,
-      path: `/v1/webhooks/events${qs}`,
+      path: `/api/v1/webhooks/events${qs}`,
       ...(opts.signal ? { signal: opts.signal } : {}),
       ...(deps.sleep ? { sleep: deps.sleep } : {}),
       maxRetries,
@@ -86,7 +86,7 @@ async function forwardEvent(
   // SSE-streamed envelopes don't carry a signature — signing is per-
   // endpoint at HTTP delivery time. Receivers that need to verify
   // signatures should register a real webhook endpoint (POST
-  // /v1/webhooks) instead of consuming the live stream.
+  // /api/v1/webhooks) instead of consuming the live stream.
   const headers: Record<string, string> = {
     'content-type': 'application/json',
     'thesignup-event-id': event.id,

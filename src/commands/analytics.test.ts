@@ -38,7 +38,9 @@ describe('runAnalytics', () => {
       { storeFactory: fx.storeFactory },
     );
     expect(code).toBe(0);
-    expect(fx.server.recordedRequests().at(-1)?.path).toBe('/v1/signups/analytics-event/analytics');
+    expect(fx.server.recordedRequests().at(-1)?.path).toBe(
+      '/api/v1/signups/analytics-event/analytics',
+    );
   });
 
   test('falls back to derived count when server has no analytics row', async () => {

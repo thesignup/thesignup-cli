@@ -175,11 +175,11 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
       return new Response(null, { status: 200 });
     }
 
-    if (req.method === 'GET' && path === '/v1/me') {
+    if (req.method === 'GET' && path === '/api/v1/me') {
       return jsonResponse(200, { id: 'usr_test', name: 'Test User', email: 'test@example.com' });
     }
 
-    if (path.startsWith('/v1/')) {
+    if (path.startsWith('/api/v1/')) {
       const authHeader = req.headers.get('authorization') ?? undefined;
       const query: Record<string, string> = {};
       for (const [k, v] of url.searchParams) query[k] = v;
@@ -207,10 +207,10 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
       }
 
       const signupMatch = path.match(
-        /^\/v1\/signups\/([^/]+)(?:\/(participants|publish|duplicate|analytics|slots|items)(?:\/([^/]+))?)?$/,
+        /^\/api\/v1\/signups\/([^/]+)(?:\/(participants|publish|duplicate|analytics|slots|items)(?:\/([^/]+))?)?$/,
       );
 
-      if (req.method === 'GET' && path === '/v1/signups') {
+      if (req.method === 'GET' && path === '/api/v1/signups') {
         const status = query.status as SignupStatus | undefined;
         const limit = query.limit ? Number(query.limit) : undefined;
         let list = [...signupsById.values()];
@@ -220,7 +220,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
         return jsonResponse(200, { signups: list });
       }
 
-      if (path === '/v1/signups/from-description' && req.method === 'POST') {
+      if (path === '/api/v1/signups/from-description' && req.method === 'POST') {
         const body = (parsedBody ?? {}) as { description?: string };
         const draft = aiDraft ?? {
           title: body.description ?? 'AI-drafted signup',
@@ -230,7 +230,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
         return jsonResponse(200, { draft });
       }
 
-      if (req.method === 'POST' && path === '/v1/signups') {
+      if (req.method === 'POST' && path === '/api/v1/signups') {
         const body = (parsedBody ?? {}) as Partial<Signup> & { description?: string };
         const now = new Date().toISOString();
         const id = body.id ?? `su_${randomUUID().slice(0, 8)}`;
@@ -405,10 +405,10 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
         }
       }
 
-      if (path === '/v1/webhooks' && req.method === 'GET') {
+      if (path === '/api/v1/webhooks' && req.method === 'GET') {
         return jsonResponse(200, { webhooks: [...webhooks.values()] });
       }
-      if (path === '/v1/webhooks' && req.method === 'POST') {
+      if (path === '/api/v1/webhooks' && req.method === 'POST') {
         const body = (parsedBody ?? {}) as Partial<Webhook>;
         const now = new Date().toISOString();
         const created: Webhook = {
@@ -423,7 +423,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
         webhooks.set(created.id, created);
         return jsonResponse(201, created);
       }
-      if (path === '/v1/webhooks/events' && req.method === 'GET') {
+      if (path === '/api/v1/webhooks/events' && req.method === 'GET') {
         const stream = new ReadableStream<Uint8Array>({
           start(controller) {
             eventStreamControllers.add(controller);
@@ -441,7 +441,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
           },
         });
       }
-      const webhookIdMatch = path.match(/^\/v1\/webhooks\/([^/]+)$/);
+      const webhookIdMatch = path.match(/^\/api\/v1\/webhooks\/([^/]+)$/);
       if (webhookIdMatch) {
         const [, id] = webhookIdMatch;
         if (!id) return jsonResponse(404, { error: 'not_found' });

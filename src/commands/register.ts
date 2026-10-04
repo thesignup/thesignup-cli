@@ -31,7 +31,7 @@ export async function runRegister(opts: RegisterOptions, deps: ClientDeps = {}):
   try {
     if (!UUID_RE.test(opts.target)) {
       throw new Error(
-        `target must be a signup UUID — got "${opts.target}". Slug lookup is not implemented yet (see /v1/signups list).`,
+        `target must be a signup UUID — got "${opts.target}". Slug lookup is not implemented yet (see /api/v1/signups list).`,
       );
     }
     if (!opts.name?.trim()) throw new Error('--name is required');
@@ -43,7 +43,7 @@ export async function runRegister(opts: RegisterOptions, deps: ClientDeps = {}):
     if (opts.slot !== undefined) {
       const { data: slots } = await apiJson<ListSlotsResponse>(
         client,
-        `/v1/signups/${encodeURIComponent(opts.target)}/slots`,
+        `/api/v1/signups/${encodeURIComponent(opts.target)}/slots`,
       );
       const resolved = resolveSlot(opts.slot, slots);
       selections.push({ type: 'slot', id: resolved.id, quantity: 1 });
@@ -52,7 +52,7 @@ export async function runRegister(opts: RegisterOptions, deps: ClientDeps = {}):
     if (opts.item && opts.item.length > 0) {
       const { data: items } = await apiJson<ListItemsResponse>(
         client,
-        `/v1/signups/${encodeURIComponent(opts.target)}/items`,
+        `/api/v1/signups/${encodeURIComponent(opts.target)}/items`,
       );
       for (const spec of opts.item) {
         const { ref, quantity } = parseItemSpec(spec);
@@ -71,7 +71,7 @@ export async function runRegister(opts: RegisterOptions, deps: ClientDeps = {}):
 
     const result = await apiJson<Record<string, unknown>>(
       client,
-      `/v1/signups/${encodeURIComponent(opts.target)}/participants`,
+      `/api/v1/signups/${encodeURIComponent(opts.target)}/participants`,
       {
         method: 'POST',
         body: JSON.stringify(body),
