@@ -1,6 +1,8 @@
 import type { AuthenticatedClient } from '../../http/client.ts';
 import { streamSse, type SseEvent } from '../../http/sse-stream.ts';
 import { emit, emitError, type OutputContext } from '../../util/output.ts';
+import { ApiError } from '../../http/api-error.ts';
+import { failWithError } from './api.ts';
 
 // Shared `--watch` helper for list commands (THE-127). Drives the
 // initial render, opens the GET /v1/webhooks/events SSE stream
@@ -80,6 +82,7 @@ export async function runWatch(opts: WatchOptions): Promise<number> {
         try {
           await opts.render();
         } catch (err) {
+          if (err instanceof ApiError && err.code === 'insufficient_scope') throw err;
           // A failed re-render shouldn't kill the watch loop — surface
           // and keep waiting for the next event. The user will see a
           // stale table but the stream continues.
@@ -91,6 +94,9 @@ export async function runWatch(opts: WatchOptions): Promise<number> {
     return 0;
   } catch (err) {
     if (opts.signal?.aborted) return 0;
+    if (err instanceof ApiError && err.code === 'insufficient_scope') {
+      return failWithError(opts.ctx, err);
+    }
     emit(opts.ctx, { error: 'watch_failed', message: errorMessage(err) }, []);
     emitError(opts.ctx, `watch stream failed: ${errorMessage(err)}`);
     return 1;

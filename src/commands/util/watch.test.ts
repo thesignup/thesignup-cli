@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { runSignupsList } from '../signups/index.ts';
 import { runParticipantsList } from '../participants/index.ts';
 import { createCommandFixture, type CommandFixture } from '../../../test/command-fixture.ts';
@@ -40,6 +40,72 @@ function makeEnvelope(
 }
 
 describe('runSignupsList --watch', () => {
+  test('reports insufficient stream scope without retrying or a generic watch error', async () => {
+    fx.server.denyScope('GET', '/v1/webhooks/events', 'webhooks:read');
+    const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+    let retries = 0;
+    try {
+      const code = await runSignupsList(
+        { profile: fx.profile, apiBase: fx.server.url, json: true, watch: true },
+        {
+          storeFactory: fx.storeFactory,
+          sleep: async () => {
+            retries++;
+          },
+        },
+      );
+      expect(code).toBe(1);
+      expect(retries).toBe(0);
+      expect(
+        fx.server.recordedRequests().filter((r) => r.path === '/v1/webhooks/events'),
+      ).toHaveLength(1);
+      const error = stderr.mock.calls.map(([chunk]) => String(chunk)).join('');
+      expect(JSON.parse(error).error).toBe('insufficient_scope');
+      expect(error).toContain('thesignup auth login');
+      expect(stdout.mock.calls.map(([chunk]) => String(chunk)).join('')).not.toContain(
+        'watch_failed',
+      );
+    } finally {
+      stderr.mockRestore();
+      stdout.mockRestore();
+    }
+  });
+
+  test('stops watching when a re-render loses its scope', async () => {
+    const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+    const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
+    const controller = new AbortController();
+    const safetyTimer = setTimeout(() => controller.abort(), 500);
+    const publishTimer = setTimeout(
+      () => fx.server.publishWebhookEvent(makeEnvelope('signup.updated')),
+      50,
+    );
+    let retries = 0;
+    try {
+      const code = await runSignupsList(
+        { profile: fx.profile, apiBase: fx.server.url, watch: true, signal: controller.signal },
+        {
+          storeFactory: fx.storeFactory,
+          onWatchEvent: () => fx.server.denyScope('GET', '/v1/signups', 'signups:read'),
+          sleep: async () => {
+            retries++;
+          },
+        },
+      );
+      expect(code).toBe(1);
+      expect(retries).toBe(0);
+      expect(stderr.mock.calls.map(([chunk]) => String(chunk)).join('')).toContain(
+        'thesignup auth login',
+      );
+    } finally {
+      clearTimeout(safetyTimer);
+      clearTimeout(publishTimer);
+      stderr.mockRestore();
+      stdout.mockRestore();
+    }
+  });
+
   test('aborts cleanly with exit code 0 when the signal fires', async () => {
     const controller = new AbortController();
     setTimeout(() => controller.abort(), 60);

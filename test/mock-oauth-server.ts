@@ -57,6 +57,7 @@ export interface MockOAuthServer {
   getWebhook(id: string): Webhook | undefined;
   publishWebhookEvent(event: WebhookEvent): void;
   closeEventStreams(): void;
+  denyScope(method: string, path: string, scope: string, challenge?: boolean): void;
 }
 
 export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOAuthServer {
@@ -72,6 +73,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
   const items = new Map<string, ItemDto>();
   const analytics = new Map<string, SignupAnalytics>();
   const recorded: RecordedRequest[] = [];
+  const deniedScopes = new Map<string, { scope: string; challenge: boolean }>();
   let aiDraft: Partial<Signup> | null = null;
   const webhooks = new Map<string, Webhook>();
   const eventStreamControllers = new Set<ReadableStreamDefaultController<Uint8Array>>();
@@ -204,6 +206,18 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
 
       if (requireAuth && !authHeader?.startsWith('Bearer ')) {
         return jsonResponse(401, { error: 'unauthorized' });
+      }
+      const denial = deniedScopes.get(`${req.method} ${path}`);
+      if (denial) {
+        return new Response(JSON.stringify({ code: 'forbidden', detail: 'Insufficient scope' }), {
+          status: 403,
+          headers: {
+            'content-type': 'application/json',
+            ...(denial.challenge
+              ? { 'www-authenticate': `Bearer error="insufficient_scope", scope="${denial.scope}"` }
+              : {}),
+          },
+        });
       }
 
       const signupMatch = path.match(
@@ -572,6 +586,9 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
     },
     closeEventStreams() {
       closeStreams();
+    },
+    denyScope(method, path, scope, challenge = true) {
+      deniedScopes.set(`${method} ${path}`, { scope, challenge });
     },
   };
 }
