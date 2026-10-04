@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { createAuthenticatedClient } from './client.ts';
+import { createAuthenticatedClient, resolveRequestUrl } from './client.ts';
 import type { CredentialStore, StoredCredentials, StorageBackend } from '../storage/credentials.ts';
 
 function memoryStore(initial: Record<string, StoredCredentials>): CredentialStore {
@@ -48,7 +48,7 @@ describe('createAuthenticatedClient', () => {
       clientId: 'cli',
       fetchImpl,
     });
-    const res = await client.fetch('/v1/me');
+    const res = await client.fetch('/api/v1/me');
     expect(res.status).toBe(200);
     expect(seen[0]?.get('authorization')).toBe('Bearer access-1');
   });
@@ -83,7 +83,7 @@ describe('createAuthenticatedClient', () => {
       clientId: 'cli',
       fetchImpl,
     });
-    const res = await client.fetch('/v1/me');
+    const res = await client.fetch('/api/v1/me');
     expect(await res.text()).toBe('Bearer fresh-1');
     expect(calls).toBe(2);
 
@@ -120,7 +120,7 @@ describe('createAuthenticatedClient', () => {
       clientId: 'cli',
       fetchImpl,
     });
-    const res = await client.fetch('/v1/protected');
+    const res = await client.fetch('/api/v1/protected');
     expect(res.status).toBe(200);
     expect(resourceCalls).toBe(2);
     expect((await store.load('default'))?.accessToken).toBe('fresh-1');
@@ -133,7 +133,7 @@ describe('createAuthenticatedClient', () => {
       profile: 'default',
       clientId: 'cli',
     });
-    await expect(client.fetch('/v1/me')).rejects.toThrow(/not authenticated/);
+    await expect(client.fetch('/api/v1/me')).rejects.toThrow(/not authenticated/);
   });
 
   test('refuses an absolute URL pointing at a different origin', async () => {
@@ -168,8 +168,35 @@ describe('createAuthenticatedClient', () => {
       clientId: 'cli',
       fetchImpl,
     });
-    const res = await client.fetch('https://api.test/v1/me');
+    const res = await client.fetch('https://api.test/api/v1/me');
     expect(res.status).toBe(200);
-    expect(seen[0]).toBe('https://api.test/v1/me');
+    expect(seen[0]).toBe('https://api.test/api/v1/me');
+  });
+});
+
+describe('REST path prefix', () => {
+  test('resolveRequestUrl builds <apiBase>/api/v1/... URLs', () => {
+    expect(resolveRequestUrl('https://thesignup.app/', '/api/v1/signups?limit=5')).toBe(
+      'https://thesignup.app/api/v1/signups?limit=5',
+    );
+  });
+
+  test('rejects REST calls made without the /api/v1 prefix', async () => {
+    expect(() => resolveRequestUrl('https://thesignup.app', '/v1/signups')).toThrow(/\/api\/v1/);
+    expect(() => resolveRequestUrl('https://thesignup.app', '/signups')).toThrow(/\/api\/v1/);
+
+    const calls: string[] = [];
+    const fetchImpl = (async (url: string | URL | Request) => {
+      calls.push(String(url));
+      return new Response('ok', { status: 200 });
+    }) as typeof fetch;
+    const client = createAuthenticatedClient({
+      store: memoryStore({ default: baseCreds() }),
+      profile: 'default',
+      clientId: 'cli',
+      fetchImpl,
+    });
+    await expect(client.fetch('/v1/signups')).rejects.toThrow(/\/api\/v1/);
+    expect(calls).toHaveLength(0);
   });
 });

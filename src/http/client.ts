@@ -94,9 +94,20 @@ function stripTrailingSlash(s: string): string {
 // same origin as the base. This prevents the bearer token from being attached
 // to a request aimed at an arbitrary host (e.g. an attacker-controlled
 // "next page" link returned in an API response).
+//
+// REST calls must target `/api/v1/...` (the API is not served at `/v1`);
+// relative paths without that prefix are rejected so a missing prefix fails
+// loudly in tests instead of 404ing in production. OAuth endpoints live at
+// `/oauth/...` and are called directly by the oauth module, not via this client.
+export const REST_API_PREFIX = '/api/v1';
+
 export function resolveRequestUrl(apiBase: string, path: string): string {
   if (!/^https?:\/\//i.test(path)) {
-    return `${stripTrailingSlash(apiBase)}${path.startsWith('/') ? path : `/${path}`}`;
+    const rel = path.startsWith('/') ? path : `/${path}`;
+    if (!/^\/api\/v1(?:[/?#]|$)/.test(rel)) {
+      throw new Error(`REST path must start with ${REST_API_PREFIX}/ — got "${path}"`);
+    }
+    return `${stripTrailingSlash(apiBase)}${rel}`;
   }
   const target = new URL(path);
   const base = new URL(apiBase);
