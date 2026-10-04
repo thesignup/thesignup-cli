@@ -20,12 +20,8 @@ export class ApiError extends Error {
 
 export async function responseError(res: Response): Promise<ApiError> {
   const challenge = res.headers.get('www-authenticate') ?? '';
-  if (
-    res.status === 403 &&
-    /(?:^|,\s*)Bearer\b/i.test(challenge) &&
-    /(?:^|[\s,])error\s*=\s*"?insufficient_scope"?(?=\s*(?:,|$))/i.test(challenge)
-  ) {
-    const scope = /(?:^|[\s,])scope\s*=\s*"([^"]+)"/i.exec(challenge)?.[1];
+  const scope = res.status === 403 ? missingBearerScope(challenge) : undefined;
+  if (scope !== undefined) {
     return new ApiError(
       res.status,
       `Your login lacks ${scope ? `the ${scope} scope` : 'a required scope'} — run \`thesignup auth login\` again`,
@@ -43,4 +39,51 @@ export async function responseError(res: Response): Promise<ApiError> {
   }
   const message = body?.message ?? body?.detail ?? body?.error ?? `HTTP ${res.status}`;
   return new ApiError(res.status, message, body, body?.code ?? body?.error);
+}
+
+function missingBearerScope(header: string): string | undefined {
+  let bearer = false;
+  let error: string | undefined;
+  let scope: string | undefined;
+  const result = (): string | undefined =>
+    bearer && error?.toLowerCase() === 'insufficient_scope' ? (scope ?? '') : undefined;
+
+  for (const part of splitAuthParams(header)) {
+    const scheme = /^([a-z][\w-]*)\s+(.+)$/i.exec(part);
+    let param = part;
+    if (scheme && !scheme[2]?.startsWith('=')) {
+      const previous = result();
+      if (previous !== undefined) return previous;
+      bearer = scheme[1]?.toLowerCase() === 'bearer';
+      error = undefined;
+      scope = undefined;
+      param = scheme[2]!;
+    }
+    if (!bearer) continue;
+    const pair = /^([a-z][\w-]*)\s*=\s*(?:"((?:\\.|[^"\\])*)"|([^\s"]+))$/i.exec(param);
+    if (pair?.[1]?.toLowerCase() === 'error') error = pair[2] ?? pair[3];
+    if (pair?.[1]?.toLowerCase() === 'scope') scope = pair[2] ?? pair[3];
+  }
+  return result();
+}
+
+function splitAuthParams(header: string): string[] {
+  const parts: string[] = [];
+  let start = 0;
+  let quoted = false;
+  let escaped = false;
+  for (let i = 0; i < header.length; i++) {
+    if (header[i] === '\\' && quoted && !escaped) {
+      escaped = true;
+      continue;
+    }
+    if (header[i] === '"' && !escaped) quoted = !quoted;
+    escaped = false;
+    if (header[i] === ',' && !quoted) {
+      parts.push(header.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  parts.push(header.slice(start).trim());
+  return parts;
 }
