@@ -12,6 +12,8 @@ export const DEFAULT_SCOPES = [
   'participants:write',
   'webhooks:read',
   'webhooks:write',
+  'analytics:read',
+  'ai:draft',
   // Required for refresh-token issuance — the API only mints refresh
   // tokens when offline_access is in the granted scope set. Without it,
   // the proactive-refresh + 401-retry paths in src/http/client.ts never

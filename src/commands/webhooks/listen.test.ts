@@ -1,4 +1,4 @@
-import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, spyOn, test } from 'bun:test';
 import { runWebhooksListen, __internals } from './listen.ts';
 import { parseSseEvent } from '../../http/sse-stream.ts';
 import { createCommandFixture, type CommandFixture } from '../../../test/command-fixture.ts';
@@ -204,4 +204,34 @@ describe('runWebhooksListen (integration)', () => {
     );
     expect(code).toBe(1);
   });
+
+  for (const json of [false, true]) {
+    test(`reports missing stream scope in ${json ? 'JSON' : 'pretty'} mode without reconnecting`, async () => {
+      fx.server.denyScope('GET', '/v1/webhooks/events', 'webhooks:read');
+      const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+      let reconnects = 0;
+      try {
+        const code = await runWebhooksListen(
+          { profile: fx.profile, apiBase: fx.server.url, json, forwardTo: forwarder.url },
+          {
+            storeFactory: fx.storeFactory,
+            sleep: async () => {
+              reconnects++;
+            },
+          },
+        );
+        expect(code).toBe(1);
+        expect(reconnects).toBe(0);
+        expect(
+          fx.server.recordedRequests().filter((r) => r.path === '/v1/webhooks/events'),
+        ).toHaveLength(1);
+        const text = stderr.mock.calls.map(([chunk]) => String(chunk)).join('');
+        if (json) expect(JSON.parse(text).error).toBe('insufficient_scope');
+        expect(text).not.toContain('HTTP 403');
+        expect(text).toContain('thesignup auth login');
+      } finally {
+        stderr.mockRestore();
+      }
+    });
+  }
 });
