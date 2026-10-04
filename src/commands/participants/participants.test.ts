@@ -47,7 +47,7 @@ describe('participants list', () => {
     );
     expect(code).toBe(0);
     const last = fx.server.recordedRequests().at(-1);
-    expect(last?.path).toBe(`/v1/signups/${SIGNUP_UUID}/participants`);
+    expect(last?.path).toBe(`/api/v1/signups/${SIGNUP_UUID}/participants`);
     expect(last?.method).toBe('GET');
   });
 
@@ -126,7 +126,7 @@ describe('participants remove', () => {
     expect(fx.server.listParticipants(SIGNUP_UUID).length).toBe(0);
     const last = fx.server.recordedRequests().at(-1);
     expect(last?.method).toBe('DELETE');
-    expect(last?.path).toBe(`/v1/signups/${SIGNUP_UUID}/participants/pa_42`);
+    expect(last?.path).toBe(`/api/v1/signups/${SIGNUP_UUID}/participants/pa_42`);
   });
 
   test('404 → exit 1', async () => {

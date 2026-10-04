@@ -90,7 +90,7 @@ async function renderParticipantsList(
 ): Promise<void> {
   const data = await apiJson<ListParticipantsResponse>(
     client,
-    `/v1/signups/${encodeURIComponent(signup)}/participants`,
+    `/api/v1/signups/${encodeURIComponent(signup)}/participants`,
   );
   if (data.participants.length === 0) {
     emit(ctx, { ok: true, participants: [] }, ['No participants.']);
@@ -103,7 +103,7 @@ async function renderParticipantsList(
 }
 
 // `participants add` and `register` are the same server operation (POST
-// /v1/signups/:id/participants with the link-share submission contract).
+// /api/v1/signups/:id/participants with the link-share submission contract).
 // `add` is just a sibling alias under the participants group, so route
 // it through runRegister to keep one source of truth for the contract.
 export interface ParticipantsAddOptions extends CommonOptions {
@@ -143,7 +143,7 @@ export async function runParticipantsRemove(
     const { client } = buildClient(opts, deps);
     await apiJson<void>(
       client,
-      `/v1/signups/${encodeURIComponent(opts.signup)}/participants/${encodeURIComponent(opts.participantId)}`,
+      `/api/v1/signups/${encodeURIComponent(opts.signup)}/participants/${encodeURIComponent(opts.participantId)}`,
       { method: 'DELETE' },
     );
     emit(ctx, { ok: true, removed: opts.participantId }, [
