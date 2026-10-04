@@ -1,4 +1,5 @@
 import type { AuthenticatedClient } from './client.ts';
+import { InsufficientScopeError, matchInsufficientScope } from './insufficient-scope.ts';
 
 // Shared SSE consumer (THE-127). Wraps the auth-aware client.fetch with
 // EventSource semantics: opens a long-lived `text/event-stream`
@@ -70,6 +71,8 @@ export async function streamSse(opts: StreamSseOptions): Promise<void> {
       attempt = 0;
     } catch (err) {
       if (opts.signal?.aborted) return;
+      // Retrying can't grant a missing scope — surface it immediately.
+      if (err instanceof InsufficientScopeError) throw err;
       attempt += 1;
       if (attempt > maxRetries) throw err;
       const delay = Math.min(maxBackoffMs, initialBackoffMs * 2 ** (attempt - 1));
@@ -95,6 +98,14 @@ async function openAndStream(args: OpenAndStreamArgs): Promise<void> {
   const res = await args.client.fetch(args.path, init);
   if (!res.ok) {
     const text = await res.text().catch(() => '');
+    let parsed: { error?: unknown; code?: unknown } | null = null;
+    try {
+      parsed = text ? (JSON.parse(text) as { error?: unknown; code?: unknown }) : null;
+    } catch {
+      // non-JSON body — fall through to the generic error
+    }
+    const scopeMatch = matchInsufficientScope(res.status, res.headers, parsed);
+    if (scopeMatch) throw new InsufficientScopeError(scopeMatch.requiredScope);
     throw new Error(`SSE ${args.path}: HTTP ${res.status} ${text.slice(0, 200)}`);
   }
   if (!res.body) throw new Error(`SSE ${args.path}: response had no body`);

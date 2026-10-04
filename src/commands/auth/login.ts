@@ -5,6 +5,9 @@ import { emit, emitError, makeOutput } from '../../util/output.ts';
 import { openUrl } from '../../util/open-url.ts';
 
 export const DEFAULT_CLIENT_ID = 'cli_thesignup_official';
+// Must equal the union of COMMAND_SCOPES (src/commands/scopes.ts) plus
+// offline_access — scopes.test.ts enforces it. `register:write` is deliberately
+// absent: POST /v1/signups/:id/participants requires no scope.
 export const DEFAULT_SCOPES = [
   'signups:read',
   'signups:write',
@@ -12,6 +15,8 @@ export const DEFAULT_SCOPES = [
   'participants:write',
   'webhooks:read',
   'webhooks:write',
+  'analytics:read',
+  'ai:draft',
   // Required for refresh-token issuance — the API only mints refresh
   // tokens when offline_access is in the granted scope set. Without it,
   // the proactive-refresh + 401-retry paths in src/http/client.ts never
