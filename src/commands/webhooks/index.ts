@@ -1,4 +1,4 @@
-import type { Webhook, ListWebhooksResponse } from '../../api/types.ts';
+import type { CreateOrRotateWebhookResponse, ListWebhooksResponse } from '../../api/types.ts';
 import { emit, makeOutput } from '../../util/output.ts';
 import {
   apiJson,
@@ -17,13 +17,13 @@ export async function runWebhooksList(
   try {
     const { client } = buildClient(opts, deps);
     const data = await apiJson<ListWebhooksResponse>(client, '/api/v1/webhooks');
-    if (data.webhooks.length === 0) {
+    if (data.data.length === 0) {
       emit(ctx, { ok: true, webhooks: [] }, ['No webhooks configured.']);
       return 0;
     }
-    emit(ctx, { ok: true, webhooks: data.webhooks }, [
+    emit(ctx, { ok: true, webhooks: data.data }, [
       webhookHeader(),
-      ...data.webhooks.map(formatWebhookRow),
+      ...data.data.map(formatWebhookRow),
     ]);
     return 0;
   } catch (err) {
@@ -54,13 +54,13 @@ export async function runWebhooksCreate(
     const { client } = buildClient(opts, deps);
     const body: Record<string, unknown> = { url: opts.url, events };
     if (opts.description !== undefined) body.description = opts.description;
-    const created = await apiJson<Webhook>(client, '/api/v1/webhooks', {
+    const created = await apiJson<CreateOrRotateWebhookResponse>(client, '/api/v1/webhooks', {
       method: 'POST',
       body: JSON.stringify(body),
     });
-    emit(ctx, { ok: true, webhook: created }, [
-      `Created webhook ${created.id}.`,
-      ...formatWebhookDetail(created),
+    emit(ctx, { ok: true, webhook: created.endpoint, signingSecret: created.signingSecret }, [
+      `Created webhook ${created.endpoint.id}.`,
+      ...formatWebhookDetail(created.endpoint, created.signingSecret),
     ]);
     return 0;
   } catch (err) {

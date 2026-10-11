@@ -36,6 +36,7 @@ export async function runStatus(opts: StatusOptions = {}, deps: StatusDeps = {})
     creds.identity?.email
       ? `Logged in as ${creds.identity.name ?? creds.identity.email} (${creds.identity.email}).`
       : `Logged in.`,
+    ...(creds.organization ? [`Organization: ${creds.organization.name}`] : []),
     `Profile:    ${profile.name}`,
     `API base:   ${creds.apiBase}`,
     `Storage:    ${backend}`,
@@ -53,6 +54,7 @@ export async function runStatus(opts: StatusOptions = {}, deps: StatusDeps = {})
       apiBase: creds.apiBase,
       scope: creds.scope,
       identity: creds.identity,
+      organization: creds.organization,
       expiresAt: new Date(creds.expiresAt).toISOString(),
       expired,
     },

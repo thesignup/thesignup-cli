@@ -15,8 +15,16 @@ describe('runAiDraft', () => {
   test('POSTs the description and returns the AI-drafted signup', async () => {
     fx.server.setAiDraft({
       title: 'Pizza night',
-      status: 'draft',
       description: 'Casual pizza meetup',
+      category: 'other',
+      location: null,
+      suggestedDate: null,
+      endDate: null,
+      timezone: null,
+      timeSlots: [],
+      itemList: [],
+      reminderCadence: 'none',
+      estimatedParticipants: null,
     });
     const code = await runAiDraft(
       {
