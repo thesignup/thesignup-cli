@@ -34,6 +34,26 @@ const baseCreds = (overrides: Partial<StoredCredentials> = {}): StoredCredential
 });
 
 describe('createAuthenticatedClient', () => {
+  test('does not send REST requests outside /api/v1', async () => {
+    const store = memoryStore({ default: baseCreds() });
+    let calls = 0;
+    const fetchImpl = (async (_url: string | URL | Request) => {
+      calls++;
+      return new Response('ok');
+    }) as typeof fetch;
+    const client = createAuthenticatedClient({
+      store,
+      profile: 'default',
+      clientId: 'cli',
+      fetchImpl,
+    });
+
+    for (const path of ['/v1/signups', 'https://api.test/v1/signups']) {
+      await expect(client.fetch(path)).rejects.toThrow(/\/api\/v1/);
+    }
+    expect(calls).toBe(0);
+  });
+
   test('attaches Authorization: Bearer header', async () => {
     const store = memoryStore({ default: baseCreds() });
     const seen: Headers[] = [];
@@ -48,7 +68,7 @@ describe('createAuthenticatedClient', () => {
       clientId: 'cli',
       fetchImpl,
     });
-    const res = await client.fetch('/v1/me');
+    const res = await client.fetch('/api/v1/me');
     expect(res.status).toBe(200);
     expect(seen[0]?.get('authorization')).toBe('Bearer access-1');
   });
@@ -83,7 +103,7 @@ describe('createAuthenticatedClient', () => {
       clientId: 'cli',
       fetchImpl,
     });
-    const res = await client.fetch('/v1/me');
+    const res = await client.fetch('/api/v1/me');
     expect(await res.text()).toBe('Bearer fresh-1');
     expect(calls).toBe(2);
 
@@ -120,7 +140,7 @@ describe('createAuthenticatedClient', () => {
       clientId: 'cli',
       fetchImpl,
     });
-    const res = await client.fetch('/v1/protected');
+    const res = await client.fetch('/api/v1/protected');
     expect(res.status).toBe(200);
     expect(resourceCalls).toBe(2);
     expect((await store.load('default'))?.accessToken).toBe('fresh-1');
@@ -133,7 +153,7 @@ describe('createAuthenticatedClient', () => {
       profile: 'default',
       clientId: 'cli',
     });
-    await expect(client.fetch('/v1/me')).rejects.toThrow(/not authenticated/);
+    await expect(client.fetch('/api/v1/me')).rejects.toThrow(/not authenticated/);
   });
 
   test('refuses an absolute URL pointing at a different origin', async () => {
@@ -168,8 +188,8 @@ describe('createAuthenticatedClient', () => {
       clientId: 'cli',
       fetchImpl,
     });
-    const res = await client.fetch('https://api.test/v1/me');
+    const res = await client.fetch('https://api.test/api/v1/me');
     expect(res.status).toBe(200);
-    expect(seen[0]).toBe('https://api.test/v1/me');
+    expect(seen[0]).toBe('https://api.test/api/v1/me');
   });
 });

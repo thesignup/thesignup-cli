@@ -42,7 +42,7 @@ export function buildProgram(): Command {
     .description('thesignup command-line tool')
     .version(VERSION)
     .option('--profile <name>', 'profile to use (default: env THESIGNUP_PROFILE or "default")')
-    .option('--api-base <url>', 'API base URL (default: https://thesignup.app)')
+    .option('--api-base <url>', 'site origin (default: https://thesignup.app)')
     .option('--json', 'emit machine-readable JSON output');
 
   const auth = program.command('auth').description('authenticate with thesignup');
@@ -87,7 +87,7 @@ export function buildProgram(): Command {
     .option('--limit <n>', 'maximum number of signups to return', (v) => Number(v))
     .option(
       '--watch',
-      'live-update the table on signup events via the /v1/webhooks/events SSE stream (Ctrl-C to stop)',
+      'live-update the table on signup events via the /api/v1/webhooks/events SSE stream (Ctrl-C to stop)',
     )
     .action(async (cmdOpts: { status?: SignupStatus; limit?: number; watch?: boolean }) => {
       const g = pickGlobals(program);

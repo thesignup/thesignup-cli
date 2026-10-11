@@ -35,7 +35,7 @@ describe('runWebhooksList', () => {
     expect(code).toBe(0);
     const last = fx.server.recordedRequests().at(-1);
     expect(last?.method).toBe('GET');
-    expect(last?.path).toBe('/v1/webhooks');
+    expect(last?.path).toBe('/api/v1/webhooks');
   });
 });
 
@@ -54,7 +54,7 @@ describe('runWebhooksCreate', () => {
     expect(code).toBe(0);
     const last = fx.server.recordedRequests().at(-1);
     expect(last?.method).toBe('POST');
-    expect(last?.path).toBe('/v1/webhooks');
+    expect(last?.path).toBe('/api/v1/webhooks');
     const body = last?.body as { url: string; events: string[] };
     expect(body.url).toBe('https://example.com/hook');
     expect(body.events).toEqual(['signup.*', 'participant.created']);

@@ -51,6 +51,8 @@ The active profile can also be selected with the `THESIGNUP_PROFILE` environment
 | API base   | `--api-base`   | `THESIGNUP_API_BASE`   | `https://thesignup.app`  |
 | JSON output| `--json`       | —                      | pretty                   |
 
+The API base is the site origin, without a path. The CLI appends `/api/v1` for REST requests and `/oauth` for authentication requests.
+
 ## Where credentials live
 
 The CLI tries the OS keychain first (via `@napi-rs/keyring`):

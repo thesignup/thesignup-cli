@@ -16,7 +16,7 @@ export async function runWebhooksList(
   const ctx = makeOutput({ json: opts.json });
   try {
     const { client } = buildClient(opts, deps);
-    const data = await apiJson<ListWebhooksResponse>(client, '/v1/webhooks');
+    const data = await apiJson<ListWebhooksResponse>(client, '/api/v1/webhooks');
     if (data.webhooks.length === 0) {
       emit(ctx, { ok: true, webhooks: [] }, ['No webhooks configured.']);
       return 0;
@@ -54,7 +54,7 @@ export async function runWebhooksCreate(
     const { client } = buildClient(opts, deps);
     const body: Record<string, unknown> = { url: opts.url, events };
     if (opts.description !== undefined) body.description = opts.description;
-    const created = await apiJson<Webhook>(client, '/v1/webhooks', {
+    const created = await apiJson<Webhook>(client, '/api/v1/webhooks', {
       method: 'POST',
       body: JSON.stringify(body),
     });
