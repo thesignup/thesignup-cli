@@ -13,7 +13,7 @@ afterEach(async () => {
 describe('insufficient API scope', () => {
   for (const json of [false, true]) {
     test(`${json ? 'JSON' : 'pretty'} output requests a new login instead of reporting forbidden`, async () => {
-      fx.server.denyScope('GET', '/v1/signups/example/analytics', 'analytics:read');
+      fx.server.denyScope('GET', '/api/v1/signups/example/analytics', 'analytics:read');
       const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
       try {
         const code = await runAnalytics(
@@ -33,7 +33,7 @@ describe('insufficient API scope', () => {
   }
 
   test('does not treat a forbidden body without a scope challenge as insufficient_scope', async () => {
-    fx.server.denyScope('GET', '/v1/signups/example/analytics', 'analytics:read', false);
+    fx.server.denyScope('GET', '/api/v1/signups/example/analytics', 'analytics:read', false);
     const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
     try {
       const code = await runAnalytics(

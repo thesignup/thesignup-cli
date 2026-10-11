@@ -207,7 +207,7 @@ describe('runWebhooksListen (integration)', () => {
 
   for (const json of [false, true]) {
     test(`reports missing stream scope in ${json ? 'JSON' : 'pretty'} mode without reconnecting`, async () => {
-      fx.server.denyScope('GET', '/v1/webhooks/events', 'webhooks:read');
+      fx.server.denyScope('GET', '/api/v1/webhooks/events', 'webhooks:read');
       const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
       let reconnects = 0;
       try {
@@ -223,7 +223,7 @@ describe('runWebhooksListen (integration)', () => {
         expect(code).toBe(1);
         expect(reconnects).toBe(0);
         expect(
-          fx.server.recordedRequests().filter((r) => r.path === '/v1/webhooks/events'),
+          fx.server.recordedRequests().filter((r) => r.path === '/api/v1/webhooks/events'),
         ).toHaveLength(1);
         const text = stderr.mock.calls.map(([chunk]) => String(chunk)).join('');
         if (json) expect(JSON.parse(text).error).toBe('insufficient_scope');

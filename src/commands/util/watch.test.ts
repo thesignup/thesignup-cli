@@ -41,7 +41,7 @@ function makeEnvelope(
 
 describe('runSignupsList --watch', () => {
   test('reports insufficient stream scope without retrying or a generic watch error', async () => {
-    fx.server.denyScope('GET', '/v1/webhooks/events', 'webhooks:read');
+    fx.server.denyScope('GET', '/api/v1/webhooks/events', 'webhooks:read');
     const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
     const stdout = spyOn(process.stdout, 'write').mockImplementation(() => true);
     let retries = 0;
@@ -58,7 +58,7 @@ describe('runSignupsList --watch', () => {
       expect(code).toBe(1);
       expect(retries).toBe(0);
       expect(
-        fx.server.recordedRequests().filter((r) => r.path === '/v1/webhooks/events'),
+        fx.server.recordedRequests().filter((r) => r.path === '/api/v1/webhooks/events'),
       ).toHaveLength(1);
       const error = stderr.mock.calls.map(([chunk]) => String(chunk)).join('');
       expect(JSON.parse(error).error).toBe('insufficient_scope');
@@ -87,7 +87,7 @@ describe('runSignupsList --watch', () => {
         { profile: fx.profile, apiBase: fx.server.url, watch: true, signal: controller.signal },
         {
           storeFactory: fx.storeFactory,
-          onWatchEvent: () => fx.server.denyScope('GET', '/v1/signups', 'signups:read'),
+          onWatchEvent: () => fx.server.denyScope('GET', '/api/v1/signups', 'signups:read'),
           sleep: async () => {
             retries++;
           },
