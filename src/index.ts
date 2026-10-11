@@ -42,7 +42,10 @@ export function buildProgram(): Command {
     .description('thesignup command-line tool')
     .version(VERSION)
     .option('--profile <name>', 'profile to use (default: env THESIGNUP_PROFILE or "default")')
-    .option('--api-base <url>', 'site origin (default: https://thesignup.app)')
+    .option(
+      '--api-base <url>',
+      'site origin; the CLI appends /api/v1 and /oauth (default: https://thesignup.app)',
+    )
     .option('--json', 'emit machine-readable JSON output');
 
   const auth = program.command('auth').description('authenticate with thesignup');
