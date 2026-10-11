@@ -4,7 +4,12 @@ import { join } from 'node:path';
 import { randomUUID } from 'node:crypto';
 import { spawn } from 'node:child_process';
 import { parse as yamlParse, stringify as yamlStringify } from 'yaml';
-import type { Signup, ListSignupsResponse, SignupStatus } from '../../api/types.ts';
+import type {
+  Signup,
+  ListSignupsResponse,
+  SignupStatus,
+  WebhookEventType,
+} from '../../api/types.ts';
 import { emit, makeOutput, type OutputContext } from '../../util/output.ts';
 import {
   apiJson,
@@ -20,12 +25,11 @@ import type { AuthenticatedClient } from '../../http/client.ts';
 // Webhook event types that affect a signups-list view. Anything
 // touching the lifecycle of an event row gets us — registration-side
 // events are handled by participants list.
-const SIGNUPS_WATCH_EVENTS: readonly string[] = [
+const SIGNUPS_WATCH_EVENTS: readonly WebhookEventType[] = [
   'signup.created',
   'signup.updated',
   'signup.published',
   'signup.canceled',
-  'signup.completed',
 ];
 
 export interface SignupListOptions extends CommonOptions {
@@ -79,14 +83,11 @@ async function renderSignupsList(
   if (opts.limit !== undefined) qs.set('limit', String(opts.limit));
   const path = qs.toString() ? `/api/v1/signups?${qs}` : '/api/v1/signups';
   const data = await apiJson<ListSignupsResponse>(client, path);
-  if (data.signups.length === 0) {
+  if (data.data.length === 0) {
     emit(ctx, { ok: true, signups: [] }, ['No signups.']);
     return;
   }
-  emit(ctx, { ok: true, signups: data.signups }, [
-    signupHeader(),
-    ...data.signups.map(formatSignupRow),
-  ]);
+  emit(ctx, { ok: true, signups: data.data }, [signupHeader(), ...data.data.map(formatSignupRow)]);
 }
 
 export interface SignupCreateOptions extends CommonOptions {
@@ -278,13 +279,30 @@ function defaultSpawnEditor(command: string, args: string[]): Promise<number> {
 }
 
 function toEditableYaml(s: Signup): string {
-  const { id, slug, created_at, updated_at, url, ...editable } = s;
-  void id;
-  void slug;
-  void created_at;
-  void updated_at;
-  void url;
-  return yamlStringify(editable);
+  const {
+    title,
+    description,
+    eventDate,
+    signupCloseDate,
+    location,
+    isPrivate,
+    maxParticipants,
+    requiresPhone,
+    timezone,
+    eventWideCustomField,
+  } = s;
+  return yamlStringify({
+    title,
+    description,
+    eventDate,
+    signupCloseDate,
+    location,
+    isPrivate,
+    maxParticipants,
+    requiresPhone,
+    timezone,
+    eventWideCustomField,
+  });
 }
 
 function parseSignupFile(path: string, raw: string): unknown {

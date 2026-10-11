@@ -13,6 +13,23 @@ export interface CommandFixture {
   cleanup: () => Promise<void>;
 }
 
+export async function captureOutput(run: () => Promise<number>): Promise<{
+  code: number;
+  stdout: string;
+}> {
+  let stdout = '';
+  const original = process.stdout.write;
+  process.stdout.write = ((chunk: string | Uint8Array) => {
+    stdout += String(chunk);
+    return true;
+  }) as typeof process.stdout.write;
+  try {
+    return { code: await run(), stdout };
+  } finally {
+    process.stdout.write = original;
+  }
+}
+
 export async function createCommandFixture(
   opts: { profile?: string } = {},
 ): Promise<CommandFixture> {

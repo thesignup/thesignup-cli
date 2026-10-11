@@ -1,4 +1,4 @@
-import type { ListParticipantsResponse } from '../../api/types.ts';
+import type { ListParticipantsResponse, WebhookEventType } from '../../api/types.ts';
 import { emit, makeOutput, type OutputContext } from '../../util/output.ts';
 import {
   apiJson,
@@ -16,10 +16,9 @@ import type { AuthenticatedClient } from '../../http/client.ts';
 // presence or slot/item attribution. signup.* events that affect the
 // roster (publish toggles the form open; cancellation closes signups)
 // are intentionally excluded — those are covered by signups list.
-const PARTICIPANTS_WATCH_EVENTS: readonly string[] = [
+const PARTICIPANTS_WATCH_EVENTS: readonly WebhookEventType[] = [
   'participant.registered',
   'participant.canceled',
-  'participant.no_show',
   'slot.filled',
   'slot.opened',
   'item.claimed',
@@ -92,13 +91,13 @@ async function renderParticipantsList(
     client,
     `/api/v1/signups/${encodeURIComponent(signup)}/participants`,
   );
-  if (data.participants.length === 0) {
+  if (data.data.length === 0) {
     emit(ctx, { ok: true, participants: [] }, ['No participants.']);
     return;
   }
-  emit(ctx, { ok: true, participants: data.participants }, [
+  emit(ctx, { ok: true, participants: data.data }, [
     participantHeader(),
-    ...data.participants.map(formatParticipantRow),
+    ...data.data.map(formatParticipantRow),
   ]);
 }
 

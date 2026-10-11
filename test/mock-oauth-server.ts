@@ -8,7 +8,17 @@ import type {
   WebhookEvent,
   TimeSlotDto,
   ItemDto,
+  MeResponse,
+  SignupDraft,
+  SignupSummary,
 } from '../src/api/types.ts';
+import {
+  signupFixture,
+  participantFixture,
+  analyticsFixture,
+  webhookFixture,
+  meFixture,
+} from './api-fixtures.ts';
 
 export type DeviceState =
   | { kind: 'pending'; pollsRemaining?: number; slowDownPolls?: number }
@@ -20,6 +30,36 @@ export interface MockOAuthServerOptions {
   deviceAuthorizationOverride?: () => { status: number; body: unknown };
   tokenOverride?: () => { status: number; body: unknown };
   requireAuth?: boolean;
+  meResponse?: MeResponse;
+}
+
+function toSignupSummary(signup: Signup): SignupSummary {
+  const {
+    id,
+    organizationId,
+    slug,
+    title,
+    status,
+    eventDate,
+    signupCloseDate,
+    location,
+    isPrivate,
+    createdAt,
+    updatedAt,
+  } = signup;
+  return {
+    id,
+    organizationId,
+    slug,
+    title,
+    status,
+    eventDate,
+    signupCloseDate,
+    location,
+    isPrivate,
+    createdAt,
+    updatedAt,
+  };
 }
 
 export interface RecordedRequest {
@@ -50,7 +90,7 @@ export interface MockOAuthServer {
   listSignups(): Signup[];
   listParticipants(signupId: string): Participant[];
   setAnalytics(signupId: string, analytics: SignupAnalytics): void;
-  setAiDraft(draft: Partial<Signup>): void;
+  setAiDraft(draft: SignupDraft): void;
   recordedRequests(): RecordedRequest[];
   seedWebhook(webhook: Webhook): void;
   listWebhooks(): Webhook[];
@@ -72,7 +112,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
   const items = new Map<string, ItemDto>();
   const analytics = new Map<string, SignupAnalytics>();
   const recorded: RecordedRequest[] = [];
-  let aiDraft: Partial<Signup> | null = null;
+  let aiDraft: SignupDraft | null = null;
   const webhooks = new Map<string, Webhook>();
   const eventStreamControllers = new Set<ReadableStreamDefaultController<Uint8Array>>();
 
@@ -176,7 +216,13 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
     }
 
     if (req.method === 'GET' && path === '/api/v1/me') {
-      return jsonResponse(200, { id: 'usr_test', name: 'Test User', email: 'test@example.com' });
+      return jsonResponse(
+        200,
+        opts.meResponse ??
+          meFixture({
+            user: { id: 'usr_test', name: 'Test User', email: 'test@example.com' },
+          }),
+      );
     }
 
     if (path.startsWith('/api/v1/')) {
@@ -215,17 +261,25 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
         const limit = query.limit ? Number(query.limit) : undefined;
         let list = [...signupsById.values()];
         if (status) list = list.filter((s) => s.status === status);
-        list.sort((a, b) => b.created_at.localeCompare(a.created_at));
+        list.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
         if (limit !== undefined) list = list.slice(0, limit);
-        return jsonResponse(200, { signups: list });
+        return jsonResponse(200, { data: list.map(toSignupSummary), nextCursor: null });
       }
 
       if (path === '/api/v1/signups/from-description' && req.method === 'POST') {
         const body = (parsedBody ?? {}) as { description?: string };
         const draft = aiDraft ?? {
           title: body.description ?? 'AI-drafted signup',
-          status: 'draft' as const,
           description: body.description ?? '',
+          category: 'other' as const,
+          location: null,
+          suggestedDate: null,
+          endDate: null,
+          timezone: null,
+          timeSlots: [],
+          itemList: [],
+          reminderCadence: 'none' as const,
+          estimatedParticipants: null,
         };
         return jsonResponse(200, { draft });
       }
@@ -235,20 +289,16 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
         const now = new Date().toISOString();
         const id = body.id ?? `su_${randomUUID().slice(0, 8)}`;
         const slug = body.slug ?? `signup-${id.slice(-6)}`;
-        const created: Signup = {
+        const created = signupFixture({
           id,
           slug,
           status: body.status ?? 'draft',
           title: body.title ?? body.description ?? 'Untitled',
-          created_at: now,
-          updated_at: now,
-          ...(body.description !== undefined ? { description: body.description } : {}),
-          ...(body.starts_at !== undefined ? { starts_at: body.starts_at } : {}),
-          ...(body.ends_at !== undefined ? { ends_at: body.ends_at } : {}),
-          ...(body.location !== undefined ? { location: body.location } : {}),
-          ...(body.slots !== undefined ? { slots: body.slots } : {}),
-          ...(body.url !== undefined ? { url: body.url } : {}),
-        };
+          createdAt: now,
+          updatedAt: now,
+          description: body.description ?? null,
+          location: body.location ?? null,
+        });
         indexSignup(created);
         return jsonResponse(201, created);
       }
@@ -268,7 +318,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
               ...patch,
               id: target.id,
               slug: patch.slug ?? target.slug,
-              updated_at: new Date().toISOString(),
+              updatedAt: new Date().toISOString(),
             };
             indexSignup(updated);
             return jsonResponse(200, updated);
@@ -277,8 +327,8 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
             // Server treats DELETE as soft-cancel — mirrors EventService.deleteForOrgApi.
             const updated = {
               ...target,
-              status: 'canceled' as const,
-              updated_at: new Date().toISOString(),
+              status: 'closed' as const,
+              updatedAt: new Date().toISOString(),
             };
             indexSignup(updated);
             return jsonResponse(200, updated);
@@ -286,7 +336,11 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
         }
 
         if (sub === 'publish' && req.method === 'POST') {
-          const updated = { ...target, status: 'active' as const, updated_at: new Date().toISOString() };
+          const updated = {
+            ...target,
+            status: 'published' as const,
+            updatedAt: new Date().toISOString(),
+          };
           indexSignup(updated);
           return jsonResponse(200, updated);
         }
@@ -298,8 +352,8 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
             id,
             slug: `${target.slug}-copy`,
             status: 'draft',
-            created_at: now,
-            updated_at: now,
+            createdAt: now,
+            updatedAt: now,
           };
           indexSignup(duped);
           return jsonResponse(201, duped);
@@ -307,8 +361,8 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
 
         if (sub === 'participants') {
           if (req.method === 'GET') {
-            const list = [...participants.values()].filter((p) => p.signup_id === target.id);
-            return jsonResponse(200, { participants: list });
+            const list = [...participants.values()].filter((p) => p.eventId === target.id);
+            return jsonResponse(200, { data: list });
           }
           if (req.method === 'POST') {
             // Validate against the real server contract — see
@@ -356,13 +410,13 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
               }
             }
             const now = new Date().toISOString();
-            const p: Participant = {
+            const p = participantFixture({
               id: `pa_${randomUUID().slice(0, 8)}`,
-              signup_id: target.id,
+              eventId: target.id,
               name: body.name,
               email: body.email,
-              created_at: now,
-            };
+              createdAt: now,
+            });
             participants.set(p.id, p);
             return jsonResponse(201, {
               id: p.id,
@@ -377,7 +431,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
           }
           if (req.method === 'DELETE' && subId) {
             const existing = participants.get(subId);
-            if (!existing || existing.signup_id !== target.id) {
+            if (!existing || existing.eventId !== target.id) {
               return jsonResponse(404, { error: 'not_found' });
             }
             participants.delete(subId);
@@ -395,33 +449,33 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
         }
 
         if (sub === 'analytics' && req.method === 'GET') {
-          const a = analytics.get(target.id) ?? {
-            signup_id: target.id,
-            total_participants: [...participants.values()].filter(
-              (p) => p.signup_id === target.id,
-            ).length,
-          };
+          const a =
+            analytics.get(target.id) ??
+            analyticsFixture({
+              eventId: target.id,
+              participantCount: [...participants.values()].filter((p) => p.eventId === target.id)
+                .length,
+            });
           return jsonResponse(200, a);
         }
       }
 
       if (path === '/api/v1/webhooks' && req.method === 'GET') {
-        return jsonResponse(200, { webhooks: [...webhooks.values()] });
+        return jsonResponse(200, { data: [...webhooks.values()] });
       }
       if (path === '/api/v1/webhooks' && req.method === 'POST') {
         const body = (parsedBody ?? {}) as Partial<Webhook>;
         const now = new Date().toISOString();
-        const created: Webhook = {
+        const created = webhookFixture({
           id: body.id ?? `whk_${randomUUID().slice(0, 8)}`,
           url: body.url ?? '',
-          events: body.events ?? [],
-          status: body.status ?? 'active',
-          created_at: now,
-          ...(body.secret !== undefined ? { secret: body.secret } : {}),
-          ...(body.description !== undefined ? { description: body.description } : {}),
-        };
+          eventTypes: body.eventTypes ?? [],
+          createdAt: now,
+          updatedAt: now,
+          description: body.description ?? null,
+        });
         webhooks.set(created.id, created);
-        return jsonResponse(201, created);
+        return jsonResponse(201, { endpoint: created, signingSecret: 'whsec_example' });
       }
       if (path === '/api/v1/webhooks/events' && req.method === 'GET') {
         const stream = new ReadableStream<Uint8Array>({
@@ -547,7 +601,7 @@ export function createMockOAuthServer(opts: MockOAuthServerOptions = {}): MockOA
       return [...signupsById.values()];
     },
     listParticipants(signupId) {
-      return [...participants.values()].filter((p) => p.signup_id === signupId);
+      return [...participants.values()].filter((p) => p.eventId === signupId);
     },
     setAnalytics(signupId, a) {
       analytics.set(signupId, a);

@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { runParticipantsList, runParticipantsAdd, runParticipantsRemove } from './index.ts';
-import { createCommandFixture, type CommandFixture } from '../../../test/command-fixture.ts';
+import {
+  captureOutput,
+  createCommandFixture,
+  type CommandFixture,
+} from '../../../test/command-fixture.ts';
+import { participantFixture, signupFixture, slotFixture } from '../../../test/api-fixtures.ts';
 
 const SIGNUP_UUID = '00000000-0000-4000-8000-00000000000a';
 const SLOT_UUID = '00000000-0000-4000-8000-00000000a001';
@@ -9,24 +14,28 @@ let fx: CommandFixture;
 
 beforeEach(async () => {
   fx = await createCommandFixture();
-  fx.server.seedSignup({
-    id: SIGNUP_UUID,
-    slug: 'event',
-    status: 'active',
-    title: 'E',
-    created_at: '2026-05-01T00:00:00Z',
-    updated_at: '2026-05-01T00:00:00Z',
-  });
-  fx.server.seedSlot({
-    id: SLOT_UUID,
-    eventId: SIGNUP_UUID,
-    startTime: '2026-05-10T18:00:00Z',
-    endTime: '2026-05-10T19:00:00Z',
-    maxParticipants: 5,
-    title: 'Saturday',
-    description: null,
-    location: null,
-  });
+  fx.server.seedSignup(
+    signupFixture({
+      id: SIGNUP_UUID,
+      slug: 'event',
+      status: 'published',
+      title: 'E',
+      createdAt: '2026-05-01T00:00:00Z',
+      updatedAt: '2026-05-01T00:00:00Z',
+    }),
+  );
+  fx.server.seedSlot(
+    slotFixture({
+      id: SLOT_UUID,
+      eventId: SIGNUP_UUID,
+      startTime: '2026-05-10T18:00:00Z',
+      endTime: '2026-05-10T19:00:00Z',
+      maxParticipants: 5,
+      title: 'Saturday',
+      description: null,
+      location: null,
+    }),
+  );
 });
 
 afterEach(async () => {
@@ -34,13 +43,40 @@ afterEach(async () => {
 });
 
 describe('participants list', () => {
+  test('renders nested slot and item names from data', async () => {
+    fx.server.seedParticipant(
+      participantFixture({
+        id: 'pa_names',
+        eventId: SIGNUP_UUID,
+        name: 'Ada',
+        slot: {
+          id: SLOT_UUID,
+          title: 'Morning shift',
+          startTime: '2026-09-15T17:00:00Z',
+          endTime: '2026-09-15T18:00:00Z',
+        },
+        item: { id: 'item_1', name: 'Drinks', timeSlotId: SLOT_UUID, eventDayId: null },
+      }),
+    );
+    const { code, stdout } = await captureOutput(() =>
+      runParticipantsList(
+        { profile: fx.profile, apiBase: fx.server.url, signup: SIGNUP_UUID },
+        { storeFactory: fx.storeFactory },
+      ),
+    );
+    expect(code).toBe(0);
+    expect(stdout).toContain('Morning shift');
+    expect(stdout).toContain('Drinks');
+  });
   test('lists seeded participants', async () => {
-    fx.server.seedParticipant({
-      id: 'pa_1',
-      signup_id: SIGNUP_UUID,
-      name: 'Ada',
-      created_at: '2026-05-02T00:00:00Z',
-    });
+    fx.server.seedParticipant(
+      participantFixture({
+        id: 'pa_1',
+        eventId: SIGNUP_UUID,
+        name: 'Ada',
+        createdAt: '2026-05-02T00:00:00Z',
+      }),
+    );
     const code = await runParticipantsList(
       { profile: fx.profile, apiBase: fx.server.url, json: true, signup: SIGNUP_UUID },
       { storeFactory: fx.storeFactory },
@@ -106,12 +142,14 @@ describe('participants add', () => {
 
 describe('participants remove', () => {
   test('DELETEs the participant', async () => {
-    fx.server.seedParticipant({
-      id: 'pa_42',
-      signup_id: SIGNUP_UUID,
-      name: 'Ada',
-      created_at: '2026-05-02T00:00:00Z',
-    });
+    fx.server.seedParticipant(
+      participantFixture({
+        id: 'pa_42',
+        eventId: SIGNUP_UUID,
+        name: 'Ada',
+        createdAt: '2026-05-02T00:00:00Z',
+      }),
+    );
     const code = await runParticipantsRemove(
       {
         profile: fx.profile,

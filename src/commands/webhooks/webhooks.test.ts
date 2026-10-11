@@ -1,6 +1,11 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { runWebhooksList, runWebhooksCreate } from './index.ts';
-import { createCommandFixture, type CommandFixture } from '../../../test/command-fixture.ts';
+import {
+  captureOutput,
+  createCommandFixture,
+  type CommandFixture,
+} from '../../../test/command-fixture.ts';
+import { webhookFixture } from '../../../test/api-fixtures.ts';
 
 let fx: CommandFixture;
 
@@ -12,6 +17,25 @@ afterEach(async () => {
 });
 
 describe('runWebhooksList', () => {
+  test('renders event types and paused state from data', async () => {
+    fx.server.seedWebhook(
+      webhookFixture({
+        id: 'whk_paused',
+        url: 'https://example.com/hooks',
+        eventTypes: ['signup.created'],
+        paused: true,
+      }),
+    );
+    const { code, stdout } = await captureOutput(() =>
+      runWebhooksList(
+        { profile: fx.profile, apiBase: fx.server.url },
+        { storeFactory: fx.storeFactory },
+      ),
+    );
+    expect(code).toBe(0);
+    expect(stdout).toContain('paused');
+    expect(stdout).toContain('signup.created');
+  });
   test('empty list exits 0', async () => {
     const code = await runWebhooksList(
       { profile: fx.profile, apiBase: fx.server.url, json: true },
@@ -21,13 +45,15 @@ describe('runWebhooksList', () => {
   });
 
   test('returns seeded webhooks', async () => {
-    fx.server.seedWebhook({
-      id: 'whk_1',
-      url: 'https://example.com/hook',
-      events: ['signup.*'],
-      status: 'active',
-      created_at: '2026-05-01T00:00:00Z',
-    });
+    fx.server.seedWebhook(
+      webhookFixture({
+        id: 'whk_1',
+        url: 'https://example.com/hook',
+        eventTypes: ['signup.created'],
+        paused: false,
+        createdAt: '2026-05-01T00:00:00Z',
+      }),
+    );
     const code = await runWebhooksList(
       { profile: fx.profile, apiBase: fx.server.url, json: true },
       { storeFactory: fx.storeFactory },
@@ -40,6 +66,22 @@ describe('runWebhooksList', () => {
 });
 
 describe('runWebhooksCreate', () => {
+  test('renders endpoint metadata and the one-time signing secret', async () => {
+    const { code, stdout } = await captureOutput(() =>
+      runWebhooksCreate(
+        {
+          profile: fx.profile,
+          apiBase: fx.server.url,
+          url: 'https://example.com/hooks',
+          events: 'signup.created',
+        },
+        { storeFactory: fx.storeFactory },
+      ),
+    );
+    expect(code).toBe(0);
+    expect(stdout).toContain('whsec_example');
+    expect(stdout).toContain('https://example.com/hooks');
+  });
   test('parses comma-separated --events and POSTs', async () => {
     const code = await runWebhooksCreate(
       {

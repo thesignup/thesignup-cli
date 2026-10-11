@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
 import { runRegister, __internals } from './register.ts';
 import { createCommandFixture, type CommandFixture } from '../../test/command-fixture.ts';
+import { itemFixture, signupFixture, slotFixture } from '../../test/api-fixtures.ts';
 
 const SIGNUP_UUID = '00000000-0000-4000-8000-000000000001';
 const SLOT_UUID = '00000000-0000-4000-8000-0000000000a1';
@@ -10,32 +11,38 @@ let fx: CommandFixture;
 
 beforeEach(async () => {
   fx = await createCommandFixture();
-  fx.server.seedSignup({
-    id: SIGNUP_UUID,
-    slug: 'pizza',
-    status: 'active',
-    title: 'Pizza',
-    created_at: '2026-05-01T00:00:00Z',
-    updated_at: '2026-05-01T00:00:00Z',
-  });
-  fx.server.seedSlot({
-    id: SLOT_UUID,
-    eventId: SIGNUP_UUID,
-    startTime: '2026-05-10T18:00:00Z',
-    endTime: '2026-05-10T19:00:00Z',
-    maxParticipants: 10,
-    title: 'Saturday evening',
-    description: null,
-    location: null,
-  });
-  fx.server.seedItem({
-    id: ITEM_UUID,
-    eventId: SIGNUP_UUID,
-    name: 'Drinks',
-    description: null,
-    quantityNeeded: 5,
-    maxContributors: 5,
-  });
+  fx.server.seedSignup(
+    signupFixture({
+      id: SIGNUP_UUID,
+      slug: 'pizza',
+      status: 'published',
+      title: 'Pizza',
+      createdAt: '2026-05-01T00:00:00Z',
+      updatedAt: '2026-05-01T00:00:00Z',
+    }),
+  );
+  fx.server.seedSlot(
+    slotFixture({
+      id: SLOT_UUID,
+      eventId: SIGNUP_UUID,
+      startTime: '2026-05-10T18:00:00Z',
+      endTime: '2026-05-10T19:00:00Z',
+      maxParticipants: 10,
+      title: 'Saturday evening',
+      description: null,
+      location: null,
+    }),
+  );
+  fx.server.seedItem(
+    itemFixture({
+      id: ITEM_UUID,
+      eventId: SIGNUP_UUID,
+      name: 'Drinks',
+      description: null,
+      quantityNeeded: 5,
+      maxPerPerson: 5,
+    }),
+  );
 });
 
 afterEach(async () => {
