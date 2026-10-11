@@ -18,7 +18,7 @@ export async function runAiDraft(opts: AiDraftOptions, deps: ClientDeps = {}): P
   try {
     if (!opts.description) throw new Error('description is required');
     const { client } = buildClient(opts, deps);
-    const res = await apiJson<AiDraftResponse>(client, '/v1/signups/from-description', {
+    const res = await apiJson<AiDraftResponse>(client, '/api/v1/signups/from-description', {
       method: 'POST',
       body: JSON.stringify({ description: opts.description }),
     });

@@ -110,7 +110,7 @@ export async function runLogin(opts: LoginOptions = {}, deps: LoginDeps = {}): P
 
   let identity: StoredCredentials['identity'];
   try {
-    const meRes = await fetchImpl(`${stripTrailingSlash(profile.apiBase)}/v1/me`, {
+    const meRes = await fetchImpl(`${stripTrailingSlash(profile.apiBase)}/api/v1/me`, {
       headers: {
         authorization: `Bearer ${tokens.access_token}`,
         accept: 'application/json',
@@ -125,7 +125,7 @@ export async function runLogin(opts: LoginOptions = {}, deps: LoginDeps = {}): P
       if (me) identity = { id: me.id, name: me.name, email: me.email };
     }
   } catch {
-    // /v1/me failure shouldn't block login — we still have valid tokens
+    // /api/v1/me failure shouldn't block login — we still have valid tokens
   }
   if (identity) stored.identity = identity;
 

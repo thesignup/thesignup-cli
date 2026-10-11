@@ -19,7 +19,7 @@ export async function runAnalytics(opts: AnalyticsOptions, deps: ClientDeps = {}
     const { client } = buildClient(opts, deps);
     const data = await apiJson<SignupAnalytics>(
       client,
-      `/v1/signups/${encodeURIComponent(opts.signup)}/analytics`,
+      `/api/v1/signups/${encodeURIComponent(opts.signup)}/analytics`,
     );
     emit(ctx, { ok: true, analytics: data }, formatAnalytics(data));
     return 0;

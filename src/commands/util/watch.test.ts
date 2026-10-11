@@ -86,7 +86,8 @@ describe('runSignupsList --watch', () => {
       .recordedRequests()
       .filter(
         (r) =>
-          r.method === 'GET' && (r.path === '/v1/signups' || r.path.startsWith('/v1/signups?')),
+          r.method === 'GET' &&
+          (r.path === '/api/v1/signups' || r.path.startsWith('/api/v1/signups?')),
       );
     // Initial GET + re-fetch after the event.
     expect(listReqs.length).toBe(2);
@@ -123,7 +124,8 @@ describe('runSignupsList --watch', () => {
       .recordedRequests()
       .filter(
         (r) =>
-          r.method === 'GET' && (r.path === '/v1/signups' || r.path.startsWith('/v1/signups?')),
+          r.method === 'GET' &&
+          (r.path === '/api/v1/signups' || r.path.startsWith('/api/v1/signups?')),
       );
     expect(listReqs.length).toBe(1);
   });
@@ -173,7 +175,9 @@ describe('runParticipantsList --watch', () => {
     expect(matchedFires).toBe(1);
     const participantReqs = fx.server
       .recordedRequests()
-      .filter((r) => r.method === 'GET' && r.path === `/v1/signups/${SIGNUP_UUID}/participants`);
+      .filter(
+        (r) => r.method === 'GET' && r.path === `/api/v1/signups/${SIGNUP_UUID}/participants`,
+      );
     // Initial render + one re-fetch after the matching event.
     expect(participantReqs.length).toBe(2);
   });

@@ -77,7 +77,7 @@ async function renderSignupsList(
   const qs = new URLSearchParams();
   if (opts.status) qs.set('status', opts.status);
   if (opts.limit !== undefined) qs.set('limit', String(opts.limit));
-  const path = qs.toString() ? `/v1/signups?${qs}` : '/v1/signups';
+  const path = qs.toString() ? `/api/v1/signups?${qs}` : '/api/v1/signups';
   const data = await apiJson<ListSignupsResponse>(client, path);
   if (data.signups.length === 0) {
     emit(ctx, { ok: true, signups: [] }, ['No signups.']);
@@ -119,7 +119,7 @@ export async function runSignupsCreate(
       const raw = await read(opts.file, 'utf8');
       body = parseSignupFile(opts.file, raw);
     }
-    const created = await apiJson<Signup>(client, '/v1/signups', {
+    const created = await apiJson<Signup>(client, '/api/v1/signups', {
       method: 'POST',
       body: JSON.stringify(body),
     });
@@ -141,7 +141,7 @@ export async function runSignupsView(
   const ctx = makeOutput({ json: opts.json });
   try {
     const { client } = buildClient(opts, deps);
-    const signup = await apiJson<Signup>(client, `/v1/signups/${encodeURIComponent(opts.ref)}`);
+    const signup = await apiJson<Signup>(client, `/api/v1/signups/${encodeURIComponent(opts.ref)}`);
     emit(ctx, { ok: true, signup }, formatSignupDetail(signup));
     return 0;
   } catch (err) {
@@ -183,9 +183,9 @@ async function runSignupAction(
     // signup.canceled). publish/duplicate are separate action routes.
     const { path, method } =
       action === 'cancel'
-        ? { path: `/v1/signups/${encodeURIComponent(opts.ref)}`, method: 'DELETE' as const }
+        ? { path: `/api/v1/signups/${encodeURIComponent(opts.ref)}`, method: 'DELETE' as const }
         : {
-            path: `/v1/signups/${encodeURIComponent(opts.ref)}/${action}`,
+            path: `/api/v1/signups/${encodeURIComponent(opts.ref)}/${action}`,
             method: 'POST' as const,
           };
     const result = await apiJson<Signup>(client, path, { method });
@@ -220,7 +220,10 @@ export async function runSignupsEdit(
   const ctx = makeOutput({ json: opts.json });
   try {
     const { client } = buildClient(opts, deps);
-    const current = await apiJson<Signup>(client, `/v1/signups/${encodeURIComponent(opts.ref)}`);
+    const current = await apiJson<Signup>(
+      client,
+      `/api/v1/signups/${encodeURIComponent(opts.ref)}`,
+    );
     const env = deps.env ?? process.env;
     const editor = opts.editor ?? env.VISUAL ?? env.EDITOR;
     if (!editor) {
@@ -245,10 +248,14 @@ export async function runSignupsEdit(
         return 0;
       }
       const patch = yamlParse(updatedRaw) as Partial<Signup>;
-      const result = await apiJson<Signup>(client, `/v1/signups/${encodeURIComponent(opts.ref)}`, {
-        method: 'PATCH',
-        body: JSON.stringify(patch),
-      });
+      const result = await apiJson<Signup>(
+        client,
+        `/api/v1/signups/${encodeURIComponent(opts.ref)}`,
+        {
+          method: 'PATCH',
+          body: JSON.stringify(patch),
+        },
+      );
       emit(ctx, { ok: true, signup: result, changed: true }, [
         `Updated signup ${result.id}.`,
         ...formatSignupDetail(result),

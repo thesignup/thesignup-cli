@@ -3,7 +3,7 @@ import { streamSse, type SseEvent } from '../../http/sse-stream.ts';
 import { emit, emitError, type OutputContext } from '../../util/output.ts';
 
 // Shared `--watch` helper for list commands (THE-127). Drives the
-// initial render, opens the GET /v1/webhooks/events SSE stream
+// initial render, opens the GET /api/v1/webhooks/events SSE stream
 // filtered for the relevant event types, and re-renders on each
 // matching event.
 //
@@ -38,7 +38,7 @@ export interface WatchOptions {
   onEvent?: (envelope: WatchEnvelope) => void;
 }
 
-// The envelope wire format from GET /v1/webhooks/events. Kept local so
+// The envelope wire format from GET /api/v1/webhooks/events. Kept local so
 // the watch helper isn't coupled to the wider api/types.ts shape — if
 // the server adds new envelope fields, only this declaration changes.
 export interface WatchEnvelope {
@@ -60,7 +60,7 @@ export async function runWatch(opts: WatchOptions): Promise<number> {
   try {
     await streamSse({
       client: opts.client,
-      path: `/v1/webhooks/events${qs}`,
+      path: `/api/v1/webhooks/events${qs}`,
       ...(opts.signal ? { signal: opts.signal } : {}),
       ...(opts.fetchImpl ? { fetchImpl: opts.fetchImpl } : {}),
       ...(opts.sleep ? { sleep: opts.sleep } : {}),

@@ -90,7 +90,7 @@ describe('runRegister', () => {
     expect(code).toBe(0);
     const last = fx.server.recordedRequests().at(-1);
     expect(last?.method).toBe('POST');
-    expect(last?.path).toBe(`/v1/signups/${SIGNUP_UUID}/participants`);
+    expect(last?.path).toBe(`/api/v1/signups/${SIGNUP_UUID}/participants`);
     const body = last?.body as {
       name: string;
       email: string;
