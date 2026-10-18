@@ -13,21 +13,26 @@ import {
   runSignupsEdit,
 } from './index.ts';
 import type { Signup } from '../../api/types.ts';
-import { createCommandFixture, type CommandFixture } from '../../../test/command-fixture.ts';
+import {
+  captureOutput,
+  createCommandFixture,
+  type CommandFixture,
+} from '../../../test/command-fixture.ts';
+import { signupFixture } from '../../../test/api-fixtures.ts';
 
 function makeSignup(over: Partial<Signup> = {}): Signup {
-  return {
+  return signupFixture({
     id: 'su_one',
     slug: 'sat-potluck',
     status: 'draft',
     title: 'Saturday potluck',
     description: 'Bring a dish',
-    starts_at: '2026-06-01T18:00:00Z',
+    eventDate: '2026-06-01T18:00:00Z',
     location: 'Park pavilion',
-    created_at: '2026-05-01T00:00:00Z',
-    updated_at: '2026-05-01T00:00:00Z',
+    createdAt: '2026-05-01T00:00:00Z',
+    updatedAt: '2026-05-01T00:00:00Z',
     ...over,
-  };
+  });
 }
 
 let fx: CommandFixture;
@@ -40,13 +45,25 @@ afterEach(async () => {
 });
 
 describe('signups list', () => {
+  test('renders summary data from the list envelope', async () => {
+    fx.server.seedSignup(makeSignup({ id: 'su_list', slug: 'picnic', title: 'Team Picnic' }));
+    const { code, stdout } = await captureOutput(() =>
+      runSignupsList(
+        { profile: fx.profile, apiBase: fx.server.url },
+        { storeFactory: fx.storeFactory },
+      ),
+    );
+    expect(code).toBe(0);
+    expect(stdout).toContain('Team Picnic');
+    expect(stdout).toContain('picnic');
+  });
   test('returns seeded signups with status filter', async () => {
-    fx.server.seedSignup(makeSignup({ id: 'su_a', slug: 'a', status: 'active' }));
+    fx.server.seedSignup(makeSignup({ id: 'su_a', slug: 'a', status: 'published' }));
     fx.server.seedSignup(makeSignup({ id: 'su_b', slug: 'b', status: 'draft' }));
-    fx.server.seedSignup(makeSignup({ id: 'su_c', slug: 'c', status: 'active' }));
+    fx.server.seedSignup(makeSignup({ id: 'su_c', slug: 'c', status: 'published' }));
 
     const code = await runSignupsList(
-      { profile: fx.profile, apiBase: fx.server.url, json: true, status: 'active' },
+      { profile: fx.profile, apiBase: fx.server.url, json: true, status: 'published' },
       { storeFactory: fx.storeFactory },
     );
     expect(code).toBe(0);
@@ -54,7 +71,7 @@ describe('signups list', () => {
     const last = fx.server.recordedRequests().at(-1);
     expect(last?.method).toBe('GET');
     expect(last?.path).toBe('/api/v1/signups');
-    expect(last?.query.status).toBe('active');
+    expect(last?.query.status).toBe('published');
     expect(last?.authorization).toBe('Bearer at_test_token');
   });
 
@@ -155,6 +172,17 @@ describe('signups create', () => {
 });
 
 describe('signups view', () => {
+  test('renders the event date from the detail DTO', async () => {
+    fx.server.seedSignup(makeSignup({ id: 'su_date', eventDate: '2026-09-15T17:00:00Z' }));
+    const { code, stdout } = await captureOutput(() =>
+      runSignupsView(
+        { profile: fx.profile, apiBase: fx.server.url, ref: 'su_date' },
+        { storeFactory: fx.storeFactory },
+      ),
+    );
+    expect(code).toBe(0);
+    expect(stdout).toContain('2026-09-15T17:00:00Z');
+  });
   test('GETs by ref and returns 0', async () => {
     fx.server.seedSignup(makeSignup({ id: 'su_v', slug: 'view-me' }));
     const code = await runSignupsView(
@@ -176,13 +204,13 @@ describe('signups view', () => {
 
 describe('signups cancel / publish / duplicate', () => {
   test('cancel DELETEs the base resource and reports canceled status', async () => {
-    fx.server.seedSignup(makeSignup({ id: 'su_x', slug: 'x', status: 'active' }));
+    fx.server.seedSignup(makeSignup({ id: 'su_x', slug: 'x', status: 'published' }));
     const code = await runSignupsCancel(
       { profile: fx.profile, apiBase: fx.server.url, json: true, ref: 'x' },
       { storeFactory: fx.storeFactory },
     );
     expect(code).toBe(0);
-    expect(fx.server.getSignup('x')?.status).toBe('canceled');
+    expect(fx.server.getSignup('x')?.status).toBe('closed');
     const last = fx.server.recordedRequests().at(-1);
     expect(last?.method).toBe('DELETE');
     expect(last?.path).toBe('/api/v1/signups/x');
@@ -195,11 +223,11 @@ describe('signups cancel / publish / duplicate', () => {
       { storeFactory: fx.storeFactory },
     );
     expect(code).toBe(0);
-    expect(fx.server.getSignup('y')?.status).toBe('active');
+    expect(fx.server.getSignup('y')?.status).toBe('published');
   });
 
   test('duplicate creates a new draft', async () => {
-    fx.server.seedSignup(makeSignup({ id: 'su_z', slug: 'z', status: 'active' }));
+    fx.server.seedSignup(makeSignup({ id: 'su_z', slug: 'z', status: 'published' }));
     const code = await runSignupsDuplicate(
       { profile: fx.profile, apiBase: fx.server.url, json: true, ref: 'z' },
       { storeFactory: fx.storeFactory },

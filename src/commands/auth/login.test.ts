@@ -8,6 +8,8 @@ import { runStatus } from './status.ts';
 import { runLogout } from './logout.ts';
 import { createCredentialStore } from '../../storage/credentials.ts';
 import { createMockOAuthServer } from '../../../test/mock-oauth-server.ts';
+import { meFixture } from '../../../test/api-fixtures.ts';
+import { captureOutput } from '../../../test/command-fixture.ts';
 
 describe('DEFAULT_SCOPES', () => {
   test('includes offline_access so the API issues a refresh token', () => {
@@ -34,6 +36,44 @@ describe('DEFAULT_SCOPES', () => {
 });
 
 describe('runLogin (integration with mock server)', () => {
+  test('stores organization without a user and shows it in status', async () => {
+    const workDir = mkdtempSync(join(tmpdir(), 'thesignup-cli-org-test-'));
+    const server = createMockOAuthServer({ meResponse: meFixture({ user: null }) });
+    await server.start();
+    try {
+      const fileEncryptionKey = randomBytes(32);
+      const storeFactory = () =>
+        createCredentialStore({
+          keyringFactory: () => null,
+          filePath: join(workDir, 'credentials'),
+          fileEncryptionKey,
+        });
+      const fetchImpl = (async (url: string | URL | Request, init?: RequestInit) => {
+        const res = await fetch(url, init);
+        const path = typeof url === 'string' ? url : url instanceof URL ? url.toString() : url.url;
+        if (path.endsWith('/oauth/device_authorization') && res.ok) {
+          const { device_code } = (await res.clone().json()) as { device_code: string };
+          server.approve(device_code);
+        }
+        return res;
+      }) as typeof fetch;
+      expect(
+        await runLogin(
+          { profile: 'org', apiBase: server.url, json: true, noBrowser: true },
+          { fetchImpl, storeFactory },
+        ),
+      ).toBe(0);
+      const stored = await storeFactory().load('org');
+      expect(stored?.identity).toBeUndefined();
+      expect(stored?.organization?.name).toBe('Maya Okafor');
+      const status = await captureOutput(() => runStatus({ profile: 'org' }, { storeFactory }));
+      expect(status.stdout).toContain('Maya Okafor');
+      expect(status.stdout).not.toContain('undefined');
+    } finally {
+      await server.stop();
+      rmSync(workDir, { recursive: true, force: true });
+    }
+  });
   test('happy path: stores credentials and identity for the profile', async () => {
     const workDir = mkdtempSync(join(tmpdir(), 'thesignup-cli-login-test-'));
     try {
@@ -78,8 +118,13 @@ describe('runLogin (integration with mock server)', () => {
       const stored = await store.load('work');
       expect(stored).not.toBeNull();
       expect(stored?.identity?.email).toBe('test@example.com');
+      expect(stored?.organization?.name).toBe('Maya Okafor');
       expect(stored?.refreshToken).toBeTruthy();
       expect(stored?.apiBase).toBe(server.url);
+      const status = await captureOutput(() => runStatus({ profile: 'work' }, { storeFactory }));
+      expect(status.stdout).toContain('Test User');
+      expect(status.stdout).toContain('test@example.com');
+      expect(status.stdout).toContain('Maya Okafor');
 
       await server.stop();
     } finally {

@@ -5,6 +5,7 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:
 import { hostname, platform, userInfo } from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { credentialsFile } from '../config/paths.ts';
+import type { MeResponse } from '../api/types.ts';
 
 const SERVICE = 'thesignup-cli';
 const KEYRING_KEY_PREFIX = 'profile:';
@@ -18,6 +19,7 @@ export interface StoredCredentials {
   scope?: string;
   apiBase: string;
   identity?: { id?: string; name?: string; email?: string } | undefined;
+  organization?: MeResponse['organization'];
   obtainedAt: number;
 }
 

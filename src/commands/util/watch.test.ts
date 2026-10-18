@@ -3,6 +3,7 @@ import { runSignupsList } from '../signups/index.ts';
 import { runParticipantsList } from '../participants/index.ts';
 import { createCommandFixture, type CommandFixture } from '../../../test/command-fixture.ts';
 import type { WebhookEvent } from '../../api/types.ts';
+import { signupFixture, webhookEventTypes } from '../../../test/api-fixtures.ts';
 
 const SIGNUP_UUID = '00000000-0000-4000-8000-000000000071';
 const OTHER_SIGNUP_UUID = '00000000-0000-4000-8000-000000000072';
@@ -11,14 +12,16 @@ let fx: CommandFixture;
 
 beforeEach(async () => {
   fx = await createCommandFixture();
-  fx.server.seedSignup({
-    id: SIGNUP_UUID,
-    slug: 'pizza',
-    status: 'active',
-    title: 'Pizza',
-    created_at: '2026-05-01T00:00:00Z',
-    updated_at: '2026-05-01T00:00:00Z',
-  });
+  fx.server.seedSignup(
+    signupFixture({
+      id: SIGNUP_UUID,
+      slug: 'pizza',
+      status: 'published',
+      title: 'Pizza',
+      createdAt: '2026-05-01T00:00:00Z',
+      updatedAt: '2026-05-01T00:00:00Z',
+    }),
+  );
 });
 
 afterEach(async () => {
@@ -26,7 +29,7 @@ afterEach(async () => {
 });
 
 function makeEnvelope(
-  type: string,
+  type: WebhookEvent['type'],
   data: Record<string, unknown> = {},
   organizationId = 'org_1',
 ): WebhookEvent {
@@ -120,6 +123,12 @@ describe('runSignupsList --watch', () => {
       { storeFactory: fx.storeFactory },
     );
     expect(code).toBe(0);
+    const subscription = fx.server
+      .recordedRequests()
+      .find((r) => r.path === '/api/v1/webhooks/events');
+    const eventTypes = subscription?.query.events?.split(',') ?? [];
+    expect(eventTypes).toContain('signup.published');
+    expect(eventTypes.every((event) => webhookEventTypes.includes(event))).toBe(true);
   });
 
   test('pretty mode re-fetches the signups list on each matching event', async () => {
@@ -263,5 +272,11 @@ describe('runParticipantsList --watch', () => {
       { storeFactory: fx.storeFactory },
     );
     expect(code).toBe(0);
+    const subscription = fx.server
+      .recordedRequests()
+      .find((r) => r.path === '/api/v1/webhooks/events');
+    const eventTypes = subscription?.query.events?.split(',') ?? [];
+    expect(eventTypes).toContain('participant.registered');
+    expect(eventTypes.every((event) => webhookEventTypes.includes(event))).toBe(true);
   });
 });

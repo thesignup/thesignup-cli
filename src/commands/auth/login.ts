@@ -3,6 +3,7 @@ import { createCredentialStore, type StoredCredentials } from '../../storage/cre
 import { resolveProfile } from '../../config/profile.ts';
 import { emit, emitError, makeOutput } from '../../util/output.ts';
 import { openUrl } from '../../util/open-url.ts';
+import type { MeResponse } from '../../api/types.ts';
 
 export const DEFAULT_CLIENT_ID = 'cli_thesignup_official';
 export const DEFAULT_SCOPES = [
@@ -111,6 +112,7 @@ export async function runLogin(opts: LoginOptions = {}, deps: LoginDeps = {}): P
   };
 
   let identity: StoredCredentials['identity'];
+  let organization: MeResponse['organization'] | undefined;
   try {
     const meRes = await fetchImpl(`${stripTrailingSlash(profile.apiBase)}/api/v1/me`, {
       headers: {
@@ -119,17 +121,17 @@ export async function runLogin(opts: LoginOptions = {}, deps: LoginDeps = {}): P
       },
     });
     if (meRes.ok) {
-      const me = (await meRes.json().catch(() => null)) as {
-        id?: string;
-        name?: string;
-        email?: string;
-      } | null;
-      if (me) identity = { id: me.id, name: me.name, email: me.email };
+      const me = (await meRes.json().catch(() => null)) as MeResponse | null;
+      if (me?.organization) {
+        organization = me.organization;
+        if (me.user) identity = me.user;
+      }
     }
   } catch {
     // /api/v1/me failure shouldn't block login — we still have valid tokens
   }
   if (identity) stored.identity = identity;
+  if (organization) stored.organization = organization;
 
   await store.save(profile.name, stored);
   const backend = await store.backend();
@@ -143,12 +145,14 @@ export async function runLogin(opts: LoginOptions = {}, deps: LoginDeps = {}): P
       backend,
       scope: stored.scope,
       identity,
+      organization,
       expiresAt: new Date(stored.expiresAt).toISOString(),
     },
     [
       identity?.email
         ? `Logged in as ${identity.name ?? identity.email} (${identity.email}).`
         : `Logged in successfully.`,
+      ...(organization ? [`Organization: ${organization.name}`] : []),
       `Profile: ${profile.name}  API: ${profile.apiBase}  Storage: ${backend}`,
     ],
   );
