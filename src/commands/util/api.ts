@@ -3,6 +3,7 @@ import { createCredentialStore, type CredentialStore } from '../../storage/crede
 import { resolveProfile, type ProfileContext } from '../../config/profile.ts';
 import { DEFAULT_CLIENT_ID } from '../auth/login.ts';
 import { emitError, type OutputContext } from '../../util/output.ts';
+import { ApiError, responseError } from '../../http/api-error.ts';
 
 export interface CommonOptions {
   profile?: string;
@@ -37,25 +38,6 @@ export function buildClient(opts: CommonOptions, deps: ClientDeps = {}): Resolve
   return { client, store, profile };
 }
 
-export interface ApiErrorBody {
-  error?: string;
-  message?: string;
-  code?: string;
-  [key: string]: unknown;
-}
-
-export class ApiError extends Error {
-  status: number;
-  code?: string;
-  body?: ApiErrorBody;
-  constructor(status: number, message: string, body?: ApiErrorBody, code?: string) {
-    super(message);
-    this.status = status;
-    if (body !== undefined) this.body = body;
-    if (code !== undefined) this.code = code;
-  }
-}
-
 export async function apiJson<T>(
   client: AuthenticatedClient,
   path: string,
@@ -67,15 +49,7 @@ export async function apiJson<T>(
   }
   const res = await client.fetch(path, { ...init, headers });
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    let body: ApiErrorBody | undefined;
-    try {
-      body = text ? (JSON.parse(text) as ApiErrorBody) : undefined;
-    } catch {
-      body = { message: text };
-    }
-    const message = body?.message ?? body?.error ?? `HTTP ${res.status}`;
-    throw new ApiError(res.status, message, body, body?.code ?? body?.error);
+    throw await responseError(res);
   }
   if (res.status === 204) return undefined as T;
   return (await res.json()) as T;

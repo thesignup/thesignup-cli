@@ -1,4 +1,5 @@
 import type { AuthenticatedClient } from './client.ts';
+import { ApiError, responseError } from './api-error.ts';
 
 // Shared SSE consumer (THE-127). Wraps the auth-aware client.fetch with
 // EventSource semantics: opens a long-lived `text/event-stream`
@@ -70,6 +71,7 @@ export async function streamSse(opts: StreamSseOptions): Promise<void> {
       attempt = 0;
     } catch (err) {
       if (opts.signal?.aborted) return;
+      if (err instanceof ApiError && err.code === 'insufficient_scope') throw err;
       attempt += 1;
       if (attempt > maxRetries) throw err;
       const delay = Math.min(maxBackoffMs, initialBackoffMs * 2 ** (attempt - 1));
@@ -94,8 +96,7 @@ async function openAndStream(args: OpenAndStreamArgs): Promise<void> {
   void args.fetchImpl;
   const res = await args.client.fetch(args.path, init);
   if (!res.ok) {
-    const text = await res.text().catch(() => '');
-    throw new Error(`SSE ${args.path}: HTTP ${res.status} ${text.slice(0, 200)}`);
+    throw await responseError(res);
   }
   if (!res.body) throw new Error(`SSE ${args.path}: response had no body`);
   const reader = res.body.getReader();
